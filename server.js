@@ -10,9 +10,15 @@ const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 
 const apps = loadApps();
-const states = apps.map((appConfig) => ({ app: appConfig, status: STATUS.STOPPED, error: null, child: null }));
+const states = apps.map((appConfig) => ({
+  app: appConfig,
+  status: appConfig.configured ? STATUS.STOPPED : STATUS.NOT_CONFIGURED,
+  error: null,
+  child: null,
+}));
 
 function ensureStarted(i) {
+  if (!apps[i].configured) return states[i];
   if (states[i].status === STATUS.STOPPED || states[i].status === STATUS.ERROR) {
     states[i] = startApp(apps[i]);
   }
@@ -29,9 +35,18 @@ function waitingPage(appConfig, status) {
 }
 
 apps.forEach((appConfig, i) => {
+  if (!appConfig.configured) return;
+
   app.use(
     appConfig.mountPath,
     (req, res, next) => {
+      // Sub-apps commonly use root-relative or "./" asset paths that only
+      // resolve correctly once the browser's address bar has a trailing
+      // slash after the mount path (e.g. /view-prs/, not /view-prs).
+      if (req.originalUrl === appConfig.mountPath) {
+        res.redirect(302, `${appConfig.mountPath}/`);
+        return;
+      }
       const state = ensureStarted(i);
       if (state.status !== STATUS.RUNNING) {
         if (state.status === STATUS.ERROR) {
@@ -60,6 +75,7 @@ app.get('/api/apps', (req, res) => {
       description: s.app.description,
       icon: s.app.icon,
       mountPath: s.app.mountPath,
+      configured: s.app.configured,
       status: s.status,
       error: s.error,
     }))
@@ -69,6 +85,7 @@ app.get('/api/apps', (req, res) => {
 app.post('/api/apps/:slug/start', (req, res) => {
   const i = apps.findIndex((a) => a.slug === req.params.slug);
   if (i === -1) return res.status(404).json({ error: 'app not found' });
+  if (!apps[i].configured) return res.status(400).json({ error: 'app has no defaults.json' });
   const state = ensureStarted(i);
   res.json({ status: state.status, error: state.error });
 });
@@ -76,13 +93,20 @@ app.post('/api/apps/:slug/start', (req, res) => {
 app.post('/api/apps/:slug/stop', (req, res) => {
   const i = apps.findIndex((a) => a.slug === req.params.slug);
   if (i === -1) return res.status(404).json({ error: 'app not found' });
+  if (!apps[i].configured) return res.status(400).json({ error: 'app has no defaults.json' });
   stopApp(states[i]);
   res.json({ status: states[i].status });
 });
 
 app.listen(PORT, () => {
   console.log(`app-hub listening on http://localhost:${PORT}`);
-  apps.forEach((a) => console.log(`  -> ${a.name}: http://localhost:${PORT}${a.mountPath} (child port ${a.port})`));
+  apps.forEach((a) => {
+    if (a.configured) {
+      console.log(`  -> ${a.name}: http://localhost:${PORT}${a.mountPath} (child port ${a.port})`);
+    } else {
+      console.log(`  -> ${a.name}: not configured (apps/${a.folderName}/defaults.json missing)`);
+    }
+  });
 });
 
 function shutdown() {

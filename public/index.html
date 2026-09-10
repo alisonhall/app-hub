@@ -19,7 +19,9 @@
   .status-running { background: #1a7f3722; color: #1a7f37; }
   .status-starting { background: #9a6b0022; color: #9a6b00; }
   .status-error, .status-stopped { background: #cf222e22; color: #cf222e; }
+  .status-not-configured { background: #8883; color: inherit; opacity: 0.7; }
   .empty { opacity: 0.7; }
+  .name span.unconfigured { opacity: 0.85; }
   button.toggle { font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 0.4rem; border: 1px solid #8886; background: transparent; cursor: pointer; }
   button.toggle:disabled { opacity: 0.5; cursor: default; }
 </style>
@@ -41,6 +43,18 @@
 
       list.innerHTML = apps
         .map((a) => {
+          if (!a.configured) {
+            return `
+        <li>
+          <span class="icon">${a.icon}</span>
+          <span class="meta">
+            <div class="name"><span class="unconfigured">${a.name}</span></div>
+            <div class="desc">${a.description || ''}</div>
+          </span>
+          <span class="status status-not-configured">not set up</span>
+        </li>`;
+          }
+
           const isRunning = a.status === 'running' || a.status === 'starting';
           const action = isRunning ? 'stop' : 'start';
           const label = a.status === 'starting' ? 'Starting…' : isRunning ? 'Stop' : 'Start';
