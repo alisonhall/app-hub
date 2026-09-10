@@ -8,7 +8,7 @@
   body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 3rem auto; padding: 0 1.5rem; }
   h1 { font-size: 1.4rem; }
   ul { list-style: none; padding: 0; }
-  li { display: flex; align-items: center; gap: 0.75rem; padding: 0.9rem 0; border-bottom: 1px solid #8883; }
+  li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.9rem 0; border-bottom: 1px solid #8883; }
   .icon { font-size: 1.4rem; }
   .meta { flex: 1; }
   .name { font-weight: 600; }
@@ -25,6 +25,10 @@
   button.toggle { font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 0.4rem; border: 1px solid #8886; background: transparent; cursor: pointer; }
   button.toggle:disabled { opacity: 0.5; cursor: default; }
   .git-badge { font-size: 0.95rem; opacity: 0.6; cursor: default; }
+  .actions-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-left: calc(1.4rem + 0.75rem); }
+  button.action-btn { font-size: 0.75rem; padding: 0.25rem 0.6rem; border-radius: 0.4rem; border: 1px dashed #8886; background: transparent; cursor: pointer; }
+  button.action-btn:disabled { opacity: 0.5; cursor: default; }
+  .action-result { font-size: 0.75rem; opacity: 0.7; }
 </style>
 </head>
 <body>
@@ -66,6 +70,17 @@
           const action = isRunning ? 'stop' : 'start';
           const label = a.status === 'starting' ? 'Starting…' : isRunning ? 'Stop' : 'Start';
           const disabled = a.status === 'starting' ? 'disabled' : '';
+
+          const actionsHtml =
+            a.status === 'running' && a.actions && a.actions.length
+              ? `<div class="actions-row">${a.actions
+                  .map(
+                    (act) =>
+                      `<button class="action-btn" data-mount-path="${a.mountPath}" data-path="${act.path}" data-method="${act.method || 'POST'}">${act.label}</button>`
+                  )
+                  .join('')}<span class="action-result"></span></div>`
+              : '';
+
           return `
         <li>
           <span class="icon">${a.icon}</span>
@@ -75,17 +90,43 @@
           </span>
           <span class="status status-${a.status}">${a.status}${a.error ? ': ' + a.error : ''}</span>
           <button class="toggle" data-slug="${a.slug}" data-action="${action}" ${disabled}>${label}</button>
+          ${actionsHtml}
         </li>`;
         })
         .join('');
     }
 
     document.getElementById('apps').addEventListener('click', async (e) => {
-      const btn = e.target.closest('button.toggle');
-      if (!btn) return;
-      btn.disabled = true;
-      await fetch(`/api/apps/${btn.dataset.slug}/${btn.dataset.action}`, { method: 'POST' });
-      refresh();
+      const toggleBtn = e.target.closest('button.toggle');
+      if (toggleBtn) {
+        toggleBtn.disabled = true;
+        await fetch(`/api/apps/${toggleBtn.dataset.slug}/${toggleBtn.dataset.action}`, { method: 'POST' });
+        refresh();
+        return;
+      }
+
+      const actionBtn = e.target.closest('button.action-btn');
+      if (actionBtn) {
+        const { mountPath, path: actionPath, method } = actionBtn.dataset;
+        const resultEl = actionBtn.parentElement.querySelector('.action-result');
+        actionBtn.disabled = true;
+        if (resultEl) resultEl.textContent = 'Running…';
+        try {
+          const res = await fetch(`${mountPath}${actionPath}`, { method });
+          let text;
+          try {
+            const data = await res.json();
+            text = data.message || (data.ok === false ? 'Failed.' : 'Done.');
+          } catch {
+            text = res.ok ? 'Done.' : `Failed (${res.status}).`;
+          }
+          if (resultEl) resultEl.textContent = text;
+        } catch (err) {
+          if (resultEl) resultEl.textContent = `Error: ${err.message}`;
+        } finally {
+          actionBtn.disabled = false;
+        }
+      }
     });
 
     refresh();

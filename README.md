@@ -36,20 +36,26 @@ over HTTP rather than in-process function calls.
      "start": "npm start",
      "port": 4002,
      "healthPath": "/",
-     "mountPath": "/apps/your-app"
+     "mountPath": "/apps/your-app",
+     "requiredCommands": ["gh", "jq"],
+     "actions": [
+       { "label": "Run", "path": "/run", "method": "POST" }
+     ]
    }
    ```
 
-   | field         | required | notes                                                              |
-   | ------------- | -------- | ------------------------------------------------------------------- |
-   | `name`        | yes      | shown on the home page                                              |
-   | `slug`        | yes      | used to build the default `mountPath`                               |
-   | `start`       | yes      | shell command run with `cwd` set to the app's folder                |
-   | `port`        | yes      | app-hub sets `PORT=<port>` in the child's env before spawning       |
-   | `description` | no       | shown on the home page                                              |
-   | `icon`        | no       | emoji shown on the home page                                        |
-   | `healthPath`  | no       | polled after spawn until it returns < 500 (defaults to `/`)         |
-   | `mountPath`   | no       | defaults to `/apps/<slug>`                                          |
+   | field              | required | notes                                                                                     |
+   | ------------------ | -------- | ------------------------------------------------------------------------------------------ |
+   | `name`             | yes      | shown on the home page                                                                     |
+   | `slug`             | yes      | used to build the default `mountPath`                                                      |
+   | `start`            | yes      | shell command run with `cwd` set to the app's folder                                       |
+   | `port`             | yes      | app-hub sets `PORT=<port>` in the child's env before spawning                              |
+   | `description`      | no       | shown on the home page                                                                     |
+   | `icon`             | no       | emoji shown on the home page                                                               |
+   | `healthPath`       | no       | polled after spawn until it returns < 500 (defaults to `/`)                                |
+   | `mountPath`        | no       | defaults to `/apps/<slug>`                                                                 |
+   | `requiredCommands` | no       | CLI binaries the app shells out to (e.g. `gh`, `jq`); checked before spawn, surfaced as an `error` status if any are missing from `PATH` |
+   | `actions`          | no       | extra buttons shown on the home page once the app is `running`. Each is `{ "label", "path", "method" }` — app-hub wires the button to `POST <mountPath><path>`; the app itself implements what that route does |
 
 3. Make sure the app reads `process.env.PORT` to decide what to listen on
    (see `apps/example-app` for a minimal Express example).
