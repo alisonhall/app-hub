@@ -1,7 +1,7 @@
 {
   "name": "Example App",
   "slug": "example-app",
-  "description": "Minimal Express sub-app demonstrating the defaults.json contract",
+  "description": "Minimal Express sub-app demonstrating the app-hub.config.json contract",
   "icon": "🚀",
   "start": "npm start",
   "port": 4001,

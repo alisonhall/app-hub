@@ -2,7 +2,7 @@
   "name": "app-hub",
   "version": "0.1.0",
   "private": true,
-  "description": "Root launcher that discovers, starts, and proxies to sub-apps declared with a defaults.json",
+  "description": "Root launcher that discovers, starts, and proxies to sub-apps declared with an app-hub.config.json",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

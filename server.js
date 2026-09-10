@@ -1,7 +1,7 @@
 const path = require('path');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { loadApps } = require('./lib/apps');
+const { loadApps, APP_CONFIG_FILENAME } = require('./lib/apps');
 const { startApp, stopApp, stopAll, STATUS } = require('./lib/process-manager');
 
 const PORT = process.env.PORT || 3000;
@@ -86,7 +86,7 @@ app.get('/api/apps', (req, res) => {
 app.post('/api/apps/:slug/start', (req, res) => {
   const i = apps.findIndex((a) => a.slug === req.params.slug);
   if (i === -1) return res.status(404).json({ error: 'app not found' });
-  if (!apps[i].configured) return res.status(400).json({ error: 'app has no defaults.json' });
+  if (!apps[i].configured) return res.status(400).json({ error: `app has no ${APP_CONFIG_FILENAME}` });
   const state = ensureStarted(i);
   res.json({ status: state.status, error: state.error });
 });
@@ -94,7 +94,7 @@ app.post('/api/apps/:slug/start', (req, res) => {
 app.post('/api/apps/:slug/stop', (req, res) => {
   const i = apps.findIndex((a) => a.slug === req.params.slug);
   if (i === -1) return res.status(404).json({ error: 'app not found' });
-  if (!apps[i].configured) return res.status(400).json({ error: 'app has no defaults.json' });
+  if (!apps[i].configured) return res.status(400).json({ error: `app has no ${APP_CONFIG_FILENAME}` });
   stopApp(states[i]);
   res.json({ status: states[i].status });
 });
@@ -105,7 +105,7 @@ app.listen(PORT, () => {
     if (a.configured) {
       console.log(`  -> ${a.name}: http://localhost:${PORT}${a.mountPath} (child port ${a.port})`);
     } else {
-      console.log(`  -> ${a.name}: not configured (apps/${a.folderName}/defaults.json missing)`);
+      console.log(`  -> ${a.name}: not configured (apps/${a.folderName}/${APP_CONFIG_FILENAME} missing)`);
     }
   });
 });

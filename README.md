@@ -1,7 +1,7 @@
 # app-hub
 
 A root launcher for any number of independent sub-apps. Each sub-app lives
-under `apps/<folder>/` and declares itself with a `defaults.json`. The root
+under `apps/<folder>/` and declares itself with an `app-hub.config.json`. The root
 Express server discovers those, spawns each app as its own process on its own
 port, health-checks it, and reverse-proxies it under a path on a single home
 page — so you get one URL and one `npm start` for everything.
@@ -25,7 +25,7 @@ over HTTP rather than in-process function calls.
 ## Adding a sub-app
 
 1. Create `apps/<your-app>/`.
-2. Add a `defaults.json` there:
+2. Add an `app-hub.config.json` there:
 
    ```json
    {
@@ -76,7 +76,7 @@ own `port` for local debugging.
 app-hub/
   server.js              root Express server: discovery, spawn, proxy, health
   lib/
-    apps.js              scans apps/*/defaults.json
+    apps.js              scans apps/*/app-hub.config.json
     process-manager.js   spawns children, polls health, tracks status
   public/index.html       home page (polls /api/apps for live status)
   scripts/install-apps.js installs each sub-app's dependencies on postinstall
