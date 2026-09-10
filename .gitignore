@@ -2,3 +2,9 @@ node_modules/
 .DS_Store
 *.log
 .env
+
+# Sub-apps are ignored by default so a new apps/<folder> can't get committed
+# into app-hub by accident. Explicitly un-ignore each one you actually want
+# tracked in this repo (e.g. the reference example below).
+apps/*
+!apps/example-app
