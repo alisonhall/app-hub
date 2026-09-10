@@ -24,6 +24,7 @@
   .name span.unconfigured { opacity: 0.85; }
   button.toggle { font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 0.4rem; border: 1px solid #8886; background: transparent; cursor: pointer; }
   button.toggle:disabled { opacity: 0.5; cursor: default; }
+  .git-badge { font-size: 0.95rem; opacity: 0.6; cursor: default; }
 </style>
 </head>
 <body>
@@ -41,6 +42,12 @@
         return;
       }
 
+      function gitBadge(a) {
+        return a.hasOwnGit
+          ? '<span class="git-badge" title="Has its own git repository">🔀</span>'
+          : '<span class="git-badge" title="Local code, not its own git repository">📁</span>';
+      }
+
       list.innerHTML = apps
         .map((a) => {
           if (!a.configured) {
@@ -48,7 +55,7 @@
         <li>
           <span class="icon">${a.icon}</span>
           <span class="meta">
-            <div class="name"><span class="unconfigured">${a.name}</span></div>
+            <div class="name">${gitBadge(a)} <span class="unconfigured">${a.name}</span></div>
             <div class="desc">${a.description || ''}</div>
           </span>
           <span class="status status-not-configured">not set up</span>
@@ -63,7 +70,7 @@
         <li>
           <span class="icon">${a.icon}</span>
           <span class="meta">
-            <div class="name"><a href="${a.mountPath}">${a.name}</a></div>
+            <div class="name">${gitBadge(a)} <a href="${a.mountPath}">${a.name}</a></div>
             <div class="desc">${a.description || ''}</div>
           </span>
           <span class="status status-${a.status}">${a.status}${a.error ? ': ' + a.error : ''}</span>

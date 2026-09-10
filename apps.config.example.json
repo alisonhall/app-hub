@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy this file to apps.config.json (gitignored) and list absolute paths to apps that live outside this repo. Each path should contain its own defaults.json, just like a folder under apps/.",
+  "apps": [
+    "/absolute/path/to/your/app"
+  ]
+}

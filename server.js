@@ -76,6 +76,7 @@ app.get('/api/apps', (req, res) => {
       icon: s.app.icon,
       mountPath: s.app.mountPath,
       configured: s.app.configured,
+      hasOwnGit: s.app.hasOwnGit,
       status: s.status,
       error: s.error,
     }))

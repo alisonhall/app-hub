@@ -8,3 +8,7 @@ node_modules/
 # tracked in this repo (e.g. the reference example below).
 apps/*
 !apps/example-app
+
+# Local aliases pointing at apps that live outside this repo (see
+# apps.config.example.json for the tracked template/format).
+apps.config.json
