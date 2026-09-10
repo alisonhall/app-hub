@@ -1,0 +1,16 @@
+{
+  "name": "app-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Root launcher that discovers, starts, and proxies to sub-apps declared with a defaults.json",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "node scripts/install-apps.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3"
+  }
+}

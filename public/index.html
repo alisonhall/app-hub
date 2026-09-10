@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>app-hub</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 3rem auto; padding: 0 1.5rem; }
+  h1 { font-size: 1.4rem; }
+  ul { list-style: none; padding: 0; }
+  li { display: flex; align-items: center; gap: 0.75rem; padding: 0.9rem 0; border-bottom: 1px solid #8883; }
+  .icon { font-size: 1.4rem; }
+  .meta { flex: 1; }
+  .name { font-weight: 600; }
+  .name a { color: inherit; text-decoration: none; }
+  .name a:hover { text-decoration: underline; }
+  .desc { font-size: 0.85rem; opacity: 0.7; }
+  .status { font-size: 0.75rem; padding: 0.2rem 0.55rem; border-radius: 1rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .status-running { background: #1a7f3722; color: #1a7f37; }
+  .status-starting { background: #9a6b0022; color: #9a6b00; }
+  .status-error, .status-stopped { background: #cf222e22; color: #cf222e; }
+  .empty { opacity: 0.7; }
+</style>
+</head>
+<body>
+  <h1>app-hub</h1>
+  <ul id="apps"><li class="empty">Loading…</li></ul>
+
+  <script>
+    async function refresh() {
+      const res = await fetch('/api/apps');
+      const apps = await res.json();
+      const list = document.getElementById('apps');
+
+      if (!apps.length) {
+        list.innerHTML = '<li class="empty">No apps found. Add one under apps/&lt;folder&gt;/defaults.json.</li>';
+        return;
+      }
+
+      list.innerHTML = apps
+        .map(
+          (a) => `
+        <li>
+          <span class="icon">${a.icon}</span>
+          <span class="meta">
+            <div class="name"><a href="${a.mountPath}">${a.name}</a></div>
+            <div class="desc">${a.description || ''}</div>
+          </span>
+          <span class="status status-${a.status}">${a.status}${a.error ? ': ' + a.error : ''}</span>
+        </li>`
+        )
+        .join('');
+    }
+
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>
