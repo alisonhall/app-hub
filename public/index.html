@@ -20,6 +20,8 @@
   .status-starting { background: #9a6b0022; color: #9a6b00; }
   .status-error, .status-stopped { background: #cf222e22; color: #cf222e; }
   .empty { opacity: 0.7; }
+  button.toggle { font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 0.4rem; border: 1px solid #8886; background: transparent; cursor: pointer; }
+  button.toggle:disabled { opacity: 0.5; cursor: default; }
 </style>
 </head>
 <body>
@@ -38,8 +40,12 @@
       }
 
       list.innerHTML = apps
-        .map(
-          (a) => `
+        .map((a) => {
+          const isRunning = a.status === 'running' || a.status === 'starting';
+          const action = isRunning ? 'stop' : 'start';
+          const label = a.status === 'starting' ? 'Starting…' : isRunning ? 'Stop' : 'Start';
+          const disabled = a.status === 'starting' ? 'disabled' : '';
+          return `
         <li>
           <span class="icon">${a.icon}</span>
           <span class="meta">
@@ -47,10 +53,19 @@
             <div class="desc">${a.description || ''}</div>
           </span>
           <span class="status status-${a.status}">${a.status}${a.error ? ': ' + a.error : ''}</span>
-        </li>`
-        )
+          <button class="toggle" data-slug="${a.slug}" data-action="${action}" ${disabled}>${label}</button>
+        </li>`;
+        })
         .join('');
     }
+
+    document.getElementById('apps').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button.toggle');
+      if (!btn) return;
+      btn.disabled = true;
+      await fetch(`/api/apps/${btn.dataset.slug}/${btn.dataset.action}`, { method: 'POST' });
+      refresh();
+    });
 
     refresh();
     setInterval(refresh, 2000);

@@ -2,7 +2,7 @@ const path = require('path');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { loadApps } = require('./lib/apps');
-const { startApp, stopAll, STATUS } = require('./lib/process-manager');
+const { startApp, stopApp, stopAll, STATUS } = require('./lib/process-manager');
 
 const PORT = process.env.PORT || 3000;
 
@@ -10,14 +10,35 @@ const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 
 const apps = loadApps();
-const states = apps.map(startApp);
+const states = apps.map((appConfig) => ({ app: appConfig, status: STATUS.STOPPED, error: null, child: null }));
+
+function ensureStarted(i) {
+  if (states[i].status === STATUS.STOPPED || states[i].status === STATUS.ERROR) {
+    states[i] = startApp(apps[i]);
+  }
+  return states[i];
+}
+
+function waitingPage(appConfig, status) {
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><meta http-equiv="refresh" content="1" />
+<title>Starting ${appConfig.name}…</title></head>
+<body style="font-family: system-ui, sans-serif; margin: 3rem;">
+  <p>${appConfig.name} is ${status}… this page will refresh automatically.</p>
+</body></html>`;
+}
 
 apps.forEach((appConfig, i) => {
   app.use(
     appConfig.mountPath,
     (req, res, next) => {
-      if (states[i].status !== STATUS.RUNNING) {
-        res.status(503).send(`${appConfig.name} is not ready yet (${states[i].status}). Refresh in a moment.`);
+      const state = ensureStarted(i);
+      if (state.status !== STATUS.RUNNING) {
+        if (state.status === STATUS.ERROR) {
+          res.status(503).send(`${appConfig.name} failed to start: ${state.error}`);
+          return;
+        }
+        res.status(202).send(waitingPage(appConfig, state.status));
         return;
       }
       next();
@@ -43,6 +64,20 @@ app.get('/api/apps', (req, res) => {
       error: s.error,
     }))
   );
+});
+
+app.post('/api/apps/:slug/start', (req, res) => {
+  const i = apps.findIndex((a) => a.slug === req.params.slug);
+  if (i === -1) return res.status(404).json({ error: 'app not found' });
+  const state = ensureStarted(i);
+  res.json({ status: state.status, error: state.error });
+});
+
+app.post('/api/apps/:slug/stop', (req, res) => {
+  const i = apps.findIndex((a) => a.slug === req.params.slug);
+  if (i === -1) return res.status(404).json({ error: 'app not found' });
+  stopApp(states[i]);
+  res.json({ status: states[i].status });
 });
 
 app.listen(PORT, () => {
