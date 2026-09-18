@@ -77,6 +77,18 @@ over HTTP rather than in-process function calls.
 4. `npm install` at the repo root — the `postinstall` script installs each
    sub-app's own dependencies too.
 
+`start` is run through a shell, so it can use shell syntax — but which
+shell matters. On Mac/Linux it's always a POSIX shell. On Windows, `spawn`'s
+default is `cmd.exe`, not a POSIX shell, so app-hub instead prefers `bash`,
+then `sh` (from Git for Windows or WSL) if either is on `PATH`, and only
+falls back to `cmd.exe` if neither is found. That means POSIX-style syntax
+like `MYVAR=$PORT node index.js` works the same on all three platforms as
+long as a POSIX shell is installed — but a `start` command written in
+`cmd.exe`-only syntax would only work on Windows without one. When in doubt,
+avoid shell syntax in `start` and read `process.env.PORT` (or other env
+vars) directly in your app's code instead — it works everywhere, no shell
+involved.
+
 ### Pinning a sub-app's Node version
 
 Drop a `.nvmrc` (or `.node-version`) in the sub-app's folder (e.g.
