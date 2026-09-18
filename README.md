@@ -116,8 +116,40 @@ The pinned Node version itself is installed automatically on first start
 first-time download doesn't block app-hub itself or any other app's
 traffic while it runs; that app just stays `starting` a bit longer.
 
+**If `fnm install` can't get that version** (no network access to
+nodejs.org, a corporate proxy blocking it, or a platform/arch build that was
+never published upstream for that exact patch — e.g. a missing macOS arm64
+build), app-hub falls back in two steps rather than blocking the app
+outright:
+
+1. If [nvm](https://github.com/nvm-sh/nvm) is installed and already has that
+   version (common if it was installed some other way before app-hub ever
+   tried), app-hub runs the app under nvm's copy directly — no re-download,
+   and nothing gets duplicated into fnm's own directory. (This only
+   supports the POSIX shell-function `nvm`, not `nvm-windows`, which is a
+   different, incompatible tool.)
+2. If that's not available either, the app still starts — just under
+   whatever Node started app-hub itself, instead of the pinned version. A
+   version-manager problem shouldn't mean the app can't run at all.
+
+Either fallback is visible on the home page (see the Node version badge
+below), so a silent version mismatch doesn't go unnoticed.
+
 Apps without a `.nvmrc`/`.node-version` are unaffected and just run under
 the Node that started app-hub, as before.
+
+### Node version badge
+
+Only apps that pin a version via `.nvmrc`/`.node-version` get this badge —
+for everything else there's nothing to match or fall back from, so no badge
+is shown. Once such an app is running, the home page shows a small badge
+with the Node version it actually launched under — e.g. `v20.11.1 via fnm`.
+If the pin couldn't be honored and app-hub had to fall back to its own Node
+(see above), the badge instead reads `⚠ v22.x.x (wanted v20.11.1)` and is
+highlighted, so a fallback is obvious at a glance rather than silently
+running a different version than the project expects. `GET /api/apps` also
+exposes this as `node: { requested, used, source }` per app (`source` is
+`"fnm"`, `"nvm"`, `"system"`, or `null` before the app has started).
 
 Sub-apps don't need to know they're being proxied: app-hub strips the
 `mountPath` prefix before forwarding, so routes inside the app are written
@@ -170,7 +202,7 @@ anything) you need to do about it.
 | `npm install` (`postinstall`) | `scripts/install-apps.js`                | runs `npm install` inside every `apps/<folder>` that has a `package.json`                              | fails loudly like any `npm install` failure — fix and re-run `npm install`  |
 | `npm install` (`postinstall`) | `scripts/check-deps.js`                  | if any app needs `fnm`, installs it via `winget`/`brew`, or prints manual install steps if it can't    | follow the printed instructions, then re-run `npm install` (or `npm run check-deps`) |
 | `npm start` (`prestart`)      | `scripts/check-deps.js` again            | re-checks `fnm` and every app's `requiredCommands`, in case `npm install` was skipped or is stale       | same as above — it just prints warnings, it doesn't block `npm start` from continuing |
-| app-hub tries to start a sub-app | `process-manager.js`'s pre-spawn check | checks that app's `requiredCommands` (incl. `fnm` if it has a `.nvmrc`/`.node-version`) are on `PATH`   | that app's status becomes `error` with the missing command(s) named, pointing at `npm run check-deps` — other apps are unaffected |
+| app-hub tries to start a sub-app | `process-manager.js`'s pre-spawn check | checks that app's `requiredCommands` are on `PATH` (this deliberately excludes `fnm` — see the fnm → nvm → system fallback above) | that app's status becomes `error` with the missing command(s) named, pointing at `npm run check-deps` — other apps are unaffected |
 
 You can also run `npm run check-deps` by hand at any time to re-check
 everything without touching npm dependencies.

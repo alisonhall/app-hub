@@ -78,6 +78,10 @@ test('startApp/stopApp full cycle: spawns, becomes healthy, then stops cleanly w
       await new Promise((r) => setTimeout(r, 200));
     }
     assert.equal(state.status, STATUS.RUNNING, `expected running, got ${state.status} (${state.error})`);
+    // No .nvmrc pin at all — there's nothing to fall back from, so `source`
+    // is "system" without `requested` being set (this is what the home
+    // page's badge relies on to stay hidden for unpinned apps).
+    assert.deepEqual(state.node, { requested: null, used: process.version, source: 'system' });
 
     await stopApp(state);
     assert.equal(state.status, STATUS.STOPPED);
@@ -189,13 +193,47 @@ test('an app pinning a Node version via .nvmrc runs its start command through fn
       await new Promise((r) => setTimeout(r, 200));
     }
     assert.equal(state.status, STATUS.RUNNING, `expected running, got ${state.status} (${state.error})`);
+    // currentVersion was deliberately passed without a leading "v" above —
+    // state.node should still normalize it to match process.version exactly.
+    assert.deepEqual(state.node, { requested: process.version, used: process.version, source: 'fnm' });
   } finally {
     if (state.child && state.child.exitCode === null) await stopApp(state);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('a failed fnm install surfaces fnm\'s own stderr in the error, not just a generic failure message', async (t) => {
+test('a machine with no fnm on PATH at all still falls through to the system Node, instead of hard-blocking on "missing required command"', async () => {
+  const originalPath = process.env.PATH;
+  try {
+    // Empty PATH so the shell can't find an `fnm` binary at all — simulates
+    // a machine that never installed fnm. Use an absolute path to node for
+    // the app's own start command so this doesn't also break app-hub's own
+    // final spawn (which doesn't need PATH to find node).
+    process.env.PATH = '';
+    const state = startApp({
+      slug: 'no-fnm-on-path-test',
+      dir: __dirname,
+      start: `"${process.execPath}" -e "process.exit(0)"`,
+      port: 1,
+      requiredCommands: [],
+      nodeVersion: '22.22.0',
+    });
+    const deadline = Date.now() + 15000;
+    while (state.status === STATUS.STARTING && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.doesNotMatch(
+      state.error || '',
+      /missing required command/,
+      'fnm being entirely absent from PATH should fall through fnm -> nvm -> system, not hard-block startup'
+    );
+    assert.equal(state.node.source, 'system');
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test('when fnm cannot install the pinned version and nvm is unavailable too, the app still runs under the system Node', async (t) => {
   if (!(await isCommandAvailable('fnm'))) {
     t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');
     return;
@@ -206,16 +244,19 @@ test('a failed fnm install surfaces fnm\'s own stderr in the error, not just a g
     start: 'node -e "process.exit(0)"',
     port: 1,
     requiredCommands: [],
-    // Not a real Node version — fnm will fail and print why on stderr.
+    // Not a real Node version — fnm (and, if present, nvm) will fail to
+    // install it, forcing the fallback-to-system-Node path.
     nodeVersion: 'not-a-real-version-xyz',
   });
   const deadline = Date.now() + 30000;
   while (state.status === STATUS.STARTING && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 200));
   }
-  assert.equal(state.status, STATUS.ERROR);
-  assert.match(state.error, /fnm failed to install Node not-a-real-version-xyz \(from \.nvmrc\): /);
-  assert.ok(state.error.length > 'fnm failed to install Node not-a-real-version-xyz (from .nvmrc): '.length, 'should include fnm\'s actual stderr, not just the generic prefix');
+  // Falling back means the app still runs (under app-hub's own Node)
+  // instead of being blocked entirely by a version-manager problem.
+  assert.equal(state.status, STATUS.STOPPED, `expected a clean run+exit, got ${state.status} (${state.error})`);
+  assert.equal(state.error, null);
+  assert.deepEqual(state.node, { requested: 'vnot-a-real-version-xyz', used: process.version, source: 'system' });
 });
 
 test('pollUntilHealthy gives up and sets an error after exhausting its attempts against a port nothing answers on', async () => {

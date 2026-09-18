@@ -16,6 +16,8 @@
   .name a:hover { text-decoration: underline; }
   .desc { font-size: 0.85rem; opacity: 0.7; }
   .port { font-size: 0.75rem; opacity: 0.6; font-family: monospace; }
+  .node-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 1rem; font-family: monospace; background: #8883; opacity: 0.75; }
+  .node-badge.node-fallback { background: #9a6b0022; color: #9a6b00; opacity: 1; }
   .status { font-size: 0.75rem; padding: 0.2rem 0.55rem; border-radius: 1rem; text-transform: uppercase; letter-spacing: 0.03em; }
   .status-running { background: #1a7f3722; color: #1a7f37; }
   .status-starting { background: #9a6b0022; color: #9a6b00; }
@@ -64,6 +66,25 @@
           : '<span class="git-badge" title="Local code, not its own git repository">📁</span>';
       }
 
+      // Shows which Node version the app actually launched under, once
+      // started — and flags it clearly when a .nvmrc pin couldn't be
+      // honored (neither fnm nor nvm could provide it) and app-hub fell
+      // back to running under its own Node instead of the requested one.
+      // Only shown for apps that actually pin a version via .nvmrc — for
+      // everything else, "which Node did it use" isn't a meaningful
+      // question (there was nothing to match or fall back from), so
+      // showing a version number there would just be noise.
+      function nodeBadge(a) {
+        if (!a.node || !a.node.requested || !a.node.used) return '';
+        const { requested, used, source } = a.node;
+        const fallback = source === 'system';
+        const label = fallback ? `⚠ ${used} (wanted ${requested})` : `${used} via ${source}`;
+        const title = fallback
+          ? `Pinned to ${requested} via .nvmrc, but neither fnm nor nvm could provide it on this machine — running under app-hub's own Node instead.`
+          : `Pinned to ${requested} via .nvmrc, provided by ${source}.`;
+        return `<span class="node-badge${fallback ? ' node-fallback' : ''}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+      }
+
       list.innerHTML = apps
         .map((a) => {
           if (!a.configured) {
@@ -102,6 +123,7 @@
           </span>
           <span class="status status-${a.status}">${a.status}${a.error ? ': ' + escapeHtml(a.error) : ''}</span>
           <span class="port" title="Child process port">:${escapeHtml(a.port)}</span>
+          ${nodeBadge(a)}
           <button class="toggle" data-slug="${escapeHtml(a.slug)}" data-action="${action}" ${disabled}>${label}</button>
           ${actionsHtml}
         </li>`;

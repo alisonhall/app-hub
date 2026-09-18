@@ -26,6 +26,7 @@ async function buildApp() {
     status: appConfig.configured ? STATUS.STOPPED : STATUS.NOT_CONFIGURED,
     error: null,
     child: null,
+    node: { requested: appConfig.nodeVersion || null, used: null, source: null },
   }));
 
   function ensureStarted(i) {
@@ -114,6 +115,7 @@ async function buildApp() {
         actions: s.app.actions,
         status: s.status,
         error: s.error,
+        node: s.node,
       }))
     );
   });
