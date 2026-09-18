@@ -15,7 +15,8 @@ root server. That means:
   language entirely — as long as it listens on `process.env.PORT` and serves
   a health-checkable route.
 - Sub-apps don't share a dependency tree or Node version with the root or
-  each other.
+  each other — a sub-app can pin its own Node version with a `.nvmrc` file
+  in its folder (see below).
 - Each `apps/<folder>` can be its own git repo (via submodule, or just a
   symlink into another checkout on disk) without entangling histories.
 
@@ -62,6 +63,30 @@ over HTTP rather than in-process function calls.
 4. `npm install` at the repo root — the `postinstall` script installs each
    sub-app's own dependencies too.
 
+### Pinning a sub-app's Node version
+
+Drop a `.nvmrc` (or `.node-version`) in the sub-app's folder (e.g.
+`apps/your-app/.nvmrc`) with the version it needs:
+
+```
+20.11.1
+```
+
+If both files are present, `.nvmrc` wins. app-hub reads whichever is there
+and runs that app's `start` command through
+[fnm](https://github.com/Schniz/fnm) (`fnm exec --using=<version> -- <start>`)
+instead of whatever Node started app-hub itself.
+
+`fnm` isn't an npm package app-hub can just `require()` or list under
+`dependencies` — see [Dependency checks](#dependency-checks) below for how
+it (and everything else app-hub depends on) gets installed and verified.
+
+The pinned Node version itself is installed automatically on first start
+(`fnm install <version>`) if it isn't already.
+
+Apps without a `.nvmrc`/`.node-version` are unaffected and just run under
+the Node that started app-hub, as before.
+
 Sub-apps don't need to know they're being proxied: app-hub strips the
 `mountPath` prefix before forwarding, so routes inside the app are written
 as if it were running standalone at `/`.
@@ -76,6 +101,31 @@ npm start
 Then open http://localhost:3000. Each app is also reachable directly on its
 own `port` for local debugging.
 
+## Dependency checks
+
+app-hub itself needs a few things beyond its own npm packages: each
+sub-app's own npm dependencies, CLI tools sub-apps shell out to
+(`requiredCommands`), and `fnm` if any sub-app pins a Node version. None of
+that happens by magic — here's exactly when each check runs, and what (if
+anything) you need to do about it.
+
+| when                         | what runs                                | what it does                                                                                          | if something's wrong                                                        |
+| ---------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `npm install` (`postinstall`) | `scripts/install-apps.js`                | runs `npm install` inside every `apps/<folder>` that has a `package.json`                              | fails loudly like any `npm install` failure — fix and re-run `npm install`  |
+| `npm install` (`postinstall`) | `scripts/check-deps.js`                  | if any app needs `fnm`, installs it via `winget`/`brew`, or prints manual install steps if it can't    | follow the printed instructions, then re-run `npm install` (or `npm run check-deps`) |
+| `npm start` (`prestart`)      | `scripts/check-deps.js` again            | re-checks `fnm` and every app's `requiredCommands`, in case `npm install` was skipped or is stale       | same as above — it just prints warnings, it doesn't block `npm start` from continuing |
+| app-hub tries to start a sub-app | `process-manager.js`'s pre-spawn check | checks that app's `requiredCommands` (incl. `fnm` if it has a `.nvmrc`/`.node-version`) are on `PATH`   | that app's status becomes `error` with the missing command(s) named, pointing at `npm run check-deps` — other apps are unaffected |
+
+You can also run `npm run check-deps` by hand at any time to re-check
+everything without touching npm dependencies.
+
+**What's never automatic:** if the root's own `npm install` was never run,
+`npm start` will still fail (`Cannot find module 'express'`) — `prestart`
+only checks the things above, it doesn't install npm packages. Likewise, a
+CLI tool named in `requiredCommands` that has no known installer (anything
+other than `fnm`, e.g. `gh`, `jq`) is only ever flagged, never installed —
+you have to install those yourself.
+
 ## Layout
 
 ```
@@ -84,8 +134,12 @@ app-hub/
   lib/
     apps.js              scans apps/*/app-hub.config.json
     process-manager.js   spawns children, polls health, tracks status
+    deps.js              shared CLI-availability check (isCommandAvailable)
   public/index.html       home page (polls /api/apps for live status)
-  scripts/install-apps.js installs each sub-app's dependencies on postinstall
+  scripts/
+    install-apps.js      installs each sub-app's dependencies on postinstall
+    check-deps.js        ensures fnm is installed if needed, flags other
+                          missing requiredCommands (also `npm run check-deps`)
   apps/
     example-app/          reference implementation
 ```
