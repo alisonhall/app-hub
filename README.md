@@ -1,10 +1,12 @@
 # app-hub
 
 A root launcher for any number of independent sub-apps. Each sub-app lives
-under `apps/<folder>/` and declares itself with an `app-hub.config.json`. The root
-Express server discovers those, spawns each app as its own process on its own
-port, health-checks it, and reverse-proxies it under a path on a single home
-page — so you get one URL and one `npm start` for everything.
+under `apps/<folder>/` and declares itself with an `app-hub.config.json` (or,
+if it has a `package.json` with a `start` script, no config file at all —
+see [Adding a sub-app](#adding-a-sub-app)). The root Express server discovers
+those, spawns each app as its own process on its own port, health-checks it,
+and reverse-proxies it under a path on a single home page — so you get one
+URL and one `npm start` for everything.
 
 ## Why spawn + proxy instead of mounting in-process
 
@@ -25,8 +27,9 @@ over HTTP rather than in-process function calls.
 
 ## Adding a sub-app
 
-1. Create `apps/<your-app>/`.
-2. Add an `app-hub.config.json` there:
+1. Create `apps/<your-app>/` (or, for an app that lives outside this repo,
+   add its path to `apps.config.json` — see below).
+2. Optionally add an `app-hub.config.json` there:
 
    ```json
    {
@@ -35,7 +38,6 @@ over HTTP rather than in-process function calls.
      "description": "One line, shown on the home page",
      "icon": "🔧",
      "start": "npm start",
-     "port": 4002,
      "healthPath": "/",
      "mountPath": "/apps/your-app",
      "requiredCommands": ["gh", "jq"],
@@ -45,14 +47,26 @@ over HTTP rather than in-process function calls.
    }
    ```
 
+   `app-hub.config.json` itself is optional if the app has a `package.json`:
+   any field it doesn't set falls back to `package.json` — `name` and
+   `description` from their same-named fields, and `start` becomes
+   `npm start` if `package.json` has a `scripts.start`. `slug` still falls
+   back to the folder name. This is read-only discovery — nothing in
+   `package.json` gets executed until the app is actually started, and an
+   app only becomes reachable/startable once `start` resolves from one of
+   the two files. If `app-hub.config.json` exists but leaves `start` unset
+   *and* there's no `package.json` fallback, that's treated as a config
+   mistake and app-hub fails to start with a clear error, rather than
+   silently skipping the app.
+
    | field              | required | notes                                                                                     |
    | ------------------ | -------- | ------------------------------------------------------------------------------------------ |
-   | `name`             | yes      | shown on the home page                                                                     |
-   | `slug`             | yes      | used to build the default `mountPath`                                                      |
-   | `start`            | yes      | shell command run with `cwd` set to the app's folder                                       |
-   | `port`             | yes      | app-hub sets `PORT=<port>` in the child's env before spawning                              |
-   | `description`      | no       | shown on the home page                                                                     |
+   | `name`             | no       | shown on the home page; falls back to `package.json`'s `name`, then the folder name        |
+   | `slug`             | no       | used to build the default `mountPath`; falls back to the folder name                       |
+   | `start`            | no*      | shell command run with `cwd` set to the app's folder; falls back to `npm start` if `package.json` has a `scripts.start` (*required one way or the other for the app to be usable) |
+   | `description`      | no       | shown on the home page; falls back to `package.json`'s `description`                       |
    | `icon`             | no       | emoji shown on the home page                                                               |
+   | `port`             | no       | app-hub sets `PORT=<port>` in the child's env before spawning; if omitted, app-hub picks a free port for you at startup (check the home page or `/api/apps` to find it). Only declare one explicitly if you want a stable port for local debugging — and note two apps can't declare the same one, that fails fast at startup |
    | `healthPath`       | no       | polled after spawn until it returns < 500 (defaults to `/`)                                |
    | `mountPath`        | no       | defaults to `/apps/<slug>`                                                                 |
    | `requiredCommands` | no       | CLI binaries the app shells out to (e.g. `gh`, `jq`); checked before spawn, surfaced as an `error` status if any are missing from `PATH` |
@@ -99,7 +113,9 @@ npm start
 ```
 
 Then open http://localhost:3000. Each app is also reachable directly on its
-own `port` for local debugging.
+own `port` for local debugging — check the home page, or `GET /api/apps`, to
+see which port an app landed on (it's stable across an app-hub run, but can
+change between runs unless the app declares an explicit `port`).
 
 ## Dependency checks
 
@@ -132,8 +148,9 @@ you have to install those yourself.
 app-hub/
   server.js              root Express server: discovery, spawn, proxy, health
   lib/
-    apps.js              scans apps/*/app-hub.config.json
+    apps.js              scans apps/*/app-hub.config.json (falls back to package.json)
     process-manager.js   spawns children, polls health, tracks status
+    ports.js             finds free ports for apps that don't declare one
     deps.js              shared CLI-availability check (isCommandAvailable)
   public/index.html       home page (polls /api/apps for live status)
   scripts/
