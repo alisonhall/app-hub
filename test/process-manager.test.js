@@ -195,6 +195,29 @@ test('an app pinning a Node version via .nvmrc runs its start command through fn
   }
 });
 
+test('a failed fnm install surfaces fnm\'s own stderr in the error, not just a generic failure message', async (t) => {
+  if (!(await isCommandAvailable('fnm'))) {
+    t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');
+    return;
+  }
+  const state = startApp({
+    slug: 'bad-nvmrc-test',
+    dir: __dirname,
+    start: 'node -e "process.exit(0)"',
+    port: 1,
+    requiredCommands: [],
+    // Not a real Node version — fnm will fail and print why on stderr.
+    nodeVersion: 'not-a-real-version-xyz',
+  });
+  const deadline = Date.now() + 30000;
+  while (state.status === STATUS.STARTING && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  assert.equal(state.status, STATUS.ERROR);
+  assert.match(state.error, /fnm failed to install Node not-a-real-version-xyz \(from \.nvmrc\): /);
+  assert.ok(state.error.length > 'fnm failed to install Node not-a-real-version-xyz (from .nvmrc): '.length, 'should include fnm\'s actual stderr, not just the generic prefix');
+});
+
 test('pollUntilHealthy gives up and sets an error after exhausting its attempts against a port nothing answers on', async () => {
   const port = await getFreePort();
   const state = { app: { port, healthPath: '/' }, status: STATUS.STARTING, error: null, child: null };

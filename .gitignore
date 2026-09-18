@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 *.log
 .env
+.npmrc
 
 # Sub-apps are ignored by default so a new apps/<folder> can't get committed
 # into app-hub by accident. Explicitly un-ignore each one you actually want
