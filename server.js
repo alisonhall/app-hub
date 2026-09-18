@@ -1,7 +1,7 @@
 const path = require('path');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { loadApps, APP_CONFIG_FILENAME } = require('./lib/apps');
+const { loadApps, APP_CONFIG_FILENAME, RESERVED_MOUNT_PREFIXES } = require('./lib/apps');
 const { assignPorts } = require('./lib/ports');
 const { startApp, stopApp, stopAll, STATUS } = require('./lib/process-manager');
 
@@ -9,6 +9,31 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
+
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
+// Lightweight CSRF guard for the state-changing endpoints below: app-hub has
+// no auth (it's a local dev tool), so without this, any other page open in
+// the same browser could POST to these routes. Browsers always send Origin
+// on a cross-origin fetch/XHR; non-browser tools (curl, etc.) typically send
+// none at all, so only a *present-but-mismatched* Origin is rejected.
+function requireSameOrigin(req, res, next) {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  let originHost;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return res.status(403).json({ error: 'invalid Origin header' });
+  }
+  if (originHost !== req.headers.host) {
+    return res.status(403).json({ error: 'cross-origin request rejected' });
+  }
+  next();
+}
 
 async function main() {
   const apps = await assignPorts(loadApps());
@@ -28,11 +53,12 @@ async function main() {
   }
 
   function waitingPage(appConfig, status) {
+    const name = escapeHtml(appConfig.name);
     return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta http-equiv="refresh" content="1" />
-<title>Starting ${appConfig.name}…</title></head>
+<title>Starting ${name}…</title></head>
 <body style="font-family: system-ui, sans-serif; margin: 3rem;">
-  <p>${appConfig.name} is ${status}… this page will refresh automatically.</p>
+  <p>${name} is ${escapeHtml(status)}… this page will refresh automatically.</p>
 </body></html>`;
   }
 
@@ -50,7 +76,7 @@ async function main() {
         const state = ensureStarted(i);
         if (state.status !== STATUS.RUNNING) {
           if (state.status === STATUS.ERROR) {
-            res.status(503).send(`${appConfig.name} failed to start: ${state.error}`);
+            res.status(503).send(`${escapeHtml(appConfig.name)} failed to start: ${escapeHtml(state.error)}`);
             return;
           }
           res.status(202).send(waitingPage(appConfig, state.status));
@@ -59,17 +85,17 @@ async function main() {
         next();
       },
       createProxyMiddleware({
-        target: `http://localhost:${appConfig.port}`,
+        target: `http://127.0.0.1:${appConfig.port}`,
         changeOrigin: true,
-        pathRewrite: (p) => p.replace(new RegExp(`^${prefix}`), '') || '/',
+        // A literal prefix strip, not a regex: a folder/slug name containing
+        // regex-special characters (e.g. "my-app (backup)") would otherwise
+        // throw "Invalid regular expression" on the app's first request.
+        pathRewrite: (p) => (p.startsWith(prefix) ? p.slice(prefix.length) : p) || '/',
         ws: true,
       })
     );
   }
 
-  // Top-level prefixes app-hub itself reserves; a sub-app's slug alias (see
-  // below) never gets mounted over one of these, however unlikely a clash.
-  const RESERVED_PREFIXES = new Set(['/api']);
   const usedPrefixes = new Set(apps.filter((a) => a.configured).map((a) => a.mountPath));
 
   apps.forEach((appConfig, i) => {
@@ -84,7 +110,7 @@ async function main() {
     // enforced unique, this alias is unambiguous, and it transparently fixes
     // that whole class of mistake without touching the sub-app.
     const slugAlias = `/${appConfig.slug}`;
-    if (slugAlias !== appConfig.mountPath && !usedPrefixes.has(slugAlias) && !RESERVED_PREFIXES.has(slugAlias)) {
+    if (slugAlias !== appConfig.mountPath && !usedPrefixes.has(slugAlias) && !RESERVED_MOUNT_PREFIXES.has(slugAlias)) {
       mountApp(slugAlias, appConfig, i);
       usedPrefixes.add(slugAlias);
     }
@@ -108,7 +134,7 @@ async function main() {
     );
   });
 
-  app.post('/api/apps/:slug/start', (req, res) => {
+  app.post('/api/apps/:slug/start', requireSameOrigin, (req, res) => {
     const i = apps.findIndex((a) => a.slug === req.params.slug);
     if (i === -1) return res.status(404).json({ error: 'app not found' });
     if (!apps[i].configured) return res.status(400).json({ error: `app has no ${APP_CONFIG_FILENAME}` });
@@ -116,11 +142,11 @@ async function main() {
     res.json({ status: state.status, error: state.error });
   });
 
-  app.post('/api/apps/:slug/stop', (req, res) => {
+  app.post('/api/apps/:slug/stop', requireSameOrigin, async (req, res) => {
     const i = apps.findIndex((a) => a.slug === req.params.slug);
     if (i === -1) return res.status(404).json({ error: 'app not found' });
     if (!apps[i].configured) return res.status(400).json({ error: `app has no ${APP_CONFIG_FILENAME}` });
-    stopApp(states[i]);
+    await stopApp(states[i]);
     res.json({ status: states[i].status });
   });
 
@@ -135,8 +161,8 @@ async function main() {
     });
   });
 
-  function shutdown() {
-    stopAll(states);
+  async function shutdown() {
+    await stopAll(states);
     process.exit(0);
   }
   process.on('SIGINT', shutdown);

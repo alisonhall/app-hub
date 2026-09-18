@@ -62,13 +62,13 @@ over HTTP rather than in-process function calls.
    | field              | required | notes                                                                                     |
    | ------------------ | -------- | ------------------------------------------------------------------------------------------ |
    | `name`             | no       | shown on the home page; falls back to `package.json`'s `name`, then the folder name        |
-   | `slug`             | no       | used to build the default `mountPath`; falls back to the folder name                       |
+   | `slug`             | no       | used to build the default `mountPath` and the `/<slug>` compatibility alias (see below); falls back to the folder name. Letters, numbers, `-` and `_` only — Express can't mount other characters (e.g. parens), so app-hub fails fast with a clear error instead of crashing there. Two apps can't share one, that fails fast too |
    | `start`            | no*      | shell command run with `cwd` set to the app's folder; falls back to `npm start` if `package.json` has a `scripts.start` (*required one way or the other for the app to be usable) |
    | `description`      | no       | shown on the home page; falls back to `package.json`'s `description`                       |
    | `icon`             | no       | emoji shown on the home page                                                               |
    | `port`             | no       | app-hub sets `PORT=<port>` in the child's env before spawning; if omitted, app-hub picks a free port for you at startup (check the home page or `/api/apps` to find it). Only declare one explicitly if you want a stable port for local debugging — and note two apps can't declare the same one, that fails fast at startup |
    | `healthPath`       | no       | polled after spawn until it returns < 500 (defaults to `/`)                                |
-   | `mountPath`        | no       | defaults to `/apps/<slug>`                                                                 |
+   | `mountPath`        | no       | defaults to `/apps/<slug>`. Same character restriction as `slug`, must be unique across apps, and can't be `/api` (reserved for app-hub's own routes) — all checked at startup, not discovered later as a crash |
    | `requiredCommands` | no       | CLI binaries the app shells out to (e.g. `gh`, `jq`); checked before spawn, surfaced as an `error` status if any are missing from `PATH` |
    | `actions`          | no       | extra buttons shown on the home page once the app is `running`. Each is `{ "label", "path", "method" }` — app-hub wires the button to `POST <mountPath><path>`; the app itself implements what that route does |
 
@@ -112,7 +112,9 @@ instead of whatever Node started app-hub itself.
 it (and everything else app-hub depends on) gets installed and verified.
 
 The pinned Node version itself is installed automatically on first start
-(`fnm install <version>`) if it isn't already.
+(`fnm install <version>`) if it isn't already — asynchronously, so a slow
+first-time download doesn't block app-hub itself or any other app's
+traffic while it runs; that app just stays `starting` a bit longer.
 
 Apps without a `.nvmrc`/`.node-version` are unaffected and just run under
 the Node that started app-hub, as before.
@@ -120,6 +122,15 @@ the Node that started app-hub, as before.
 Sub-apps don't need to know they're being proxied: app-hub strips the
 `mountPath` prefix before forwarding, so routes inside the app are written
 as if it were running standalone at `/`.
+
+### Compatibility alias
+
+Each app is also mounted at a plain `/<slug>`, in addition to its real
+`mountPath` (usually `/apps/<slug>`). This exists because some sub-apps'
+own client-side code hardcodes an assumption that they're mounted at
+`/<slug>` rather than app-hub's actual convention — that alias makes those
+apps work without needing to change their code. It's skipped if it would
+collide with another app's mountPath or with `/api`.
 
 ## Running
 
@@ -132,6 +143,19 @@ Then open http://localhost:3000. Each app is also reachable directly on its
 own `port` for local debugging — check the home page, or `GET /api/apps`, to
 see which port an app landed on (it's stable across an app-hub run, but can
 change between runs unless the app declares an explicit `port`).
+
+Run `npm test` to run the test suite (`lib/apps.js`'s validation rules,
+`lib/ports.js`, `lib/deps.js`, and a real start/stop cycle through
+`lib/process-manager.js`).
+
+## Security notes
+
+app-hub is a local dev tool with no authentication — anyone who can reach
+its port can start/stop any configured app. It does check that state-changing
+requests (`POST /api/apps/:slug/start` and `/stop`) don't come from a
+*different* origin (blocks the "malicious page open in another tab" case),
+but that's not the same as real auth. Don't expose app-hub's port beyond
+your own machine.
 
 ## Dependency checks
 

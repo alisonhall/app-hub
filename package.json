@@ -8,7 +8,8 @@
     "prestart": "node scripts/check-deps.js",
     "start": "node server.js",
     "postinstall": "node scripts/install-apps.js && node scripts/check-deps.js",
-    "check-deps": "node scripts/check-deps.js"
+    "check-deps": "node scripts/check-deps.js",
+    "test": "node --test"
   },
   "license": "MIT",
   "engines": {

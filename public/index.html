@@ -37,6 +37,17 @@
   <ul id="apps"><li class="empty">Loading…</li></ul>
 
   <script>
+    // Names/descriptions/errors ultimately come from config files (or a
+    // spawned process's own text), not from untrusted network input — but
+    // escaping them before dropping into innerHTML costs nothing and avoids
+    // a stray "<" or "&" in an app's own description silently breaking the
+    // page (or worse, a config file with real markup in it doing something
+    // unexpected).
+    function escapeHtml(value) {
+      const escapes = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return String(value).replace(/[&<>"']/g, (c) => escapes[c]);
+    }
+
     async function refresh() {
       const res = await fetch('/api/apps');
       const apps = await res.json();
@@ -58,10 +69,10 @@
           if (!a.configured) {
             return `
         <li>
-          <span class="icon">${a.icon}</span>
+          <span class="icon">${escapeHtml(a.icon)}</span>
           <span class="meta">
-            <div class="name">${gitBadge(a)} <span class="unconfigured">${a.name}</span></div>
-            <div class="desc">${a.description || ''}</div>
+            <div class="name">${gitBadge(a)} <span class="unconfigured">${escapeHtml(a.name)}</span></div>
+            <div class="desc">${escapeHtml(a.description || '')}</div>
           </span>
           <span class="status status-not-configured">not set up</span>
         </li>`;
@@ -77,21 +88,21 @@
               ? `<div class="actions-row">${a.actions
                   .map(
                     (act) =>
-                      `<button class="action-btn" data-mount-path="${a.mountPath}" data-path="${act.path}" data-method="${act.method || 'POST'}">${act.label}</button>`
+                      `<button class="action-btn" data-mount-path="${escapeHtml(a.mountPath)}" data-path="${escapeHtml(act.path)}" data-method="${escapeHtml(act.method || 'POST')}">${escapeHtml(act.label)}</button>`
                   )
                   .join('')}<span class="action-result"></span></div>`
               : '';
 
           return `
         <li>
-          <span class="icon">${a.icon}</span>
+          <span class="icon">${escapeHtml(a.icon)}</span>
           <span class="meta">
-            <div class="name">${gitBadge(a)} <a href="${a.mountPath}">${a.name}</a></div>
-            <div class="desc">${a.description || ''}</div>
+            <div class="name">${gitBadge(a)} <a href="${escapeHtml(a.mountPath)}">${escapeHtml(a.name)}</a></div>
+            <div class="desc">${escapeHtml(a.description || '')}</div>
           </span>
-          <span class="status status-${a.status}">${a.status}${a.error ? ': ' + a.error : ''}</span>
-          <span class="port" title="Child process port">:${a.port}</span>
-          <button class="toggle" data-slug="${a.slug}" data-action="${action}" ${disabled}>${label}</button>
+          <span class="status status-${a.status}">${a.status}${a.error ? ': ' + escapeHtml(a.error) : ''}</span>
+          <span class="port" title="Child process port">:${escapeHtml(a.port)}</span>
+          <button class="toggle" data-slug="${escapeHtml(a.slug)}" data-action="${action}" ${disabled}>${label}</button>
           ${actionsHtml}
         </li>`;
         })

@@ -9,7 +9,7 @@ const { isCommandAvailable } = require('../lib/deps');
 // Other requiredCommands (gh, jq, ...) are declared by individual sub-apps
 // and are just flagged here, not installed, since app-hub has no way to
 // know where they should come from.
-function tryInstallFnm() {
+async function tryInstallFnm() {
   if (process.platform === 'win32') {
     console.log('Attempting to install fnm via winget...');
     execSync(
@@ -18,7 +18,7 @@ function tryInstallFnm() {
     );
     return true;
   }
-  if (process.platform === 'darwin' && isCommandAvailable('brew')) {
+  if (process.platform === 'darwin' && (await isCommandAvailable('brew'))) {
     console.log('Attempting to install fnm via Homebrew...');
     execSync('brew install fnm', { stdio: 'inherit' });
     return true;
@@ -26,11 +26,11 @@ function tryInstallFnm() {
   return false;
 }
 
-function checkFnm(apps) {
+async function checkFnm(apps) {
   const needsFnm = apps.some((app) => app.nodeVersion);
   if (!needsFnm) return;
 
-  if (isCommandAvailable('fnm')) {
+  if (await isCommandAvailable('fnm')) {
     console.log('fnm found on PATH — per-app Node version pinning (.nvmrc) is ready to use.');
     return;
   }
@@ -38,7 +38,7 @@ function checkFnm(apps) {
   console.log('\nOne or more sub-apps pin a Node version via .nvmrc, which app-hub runs through fnm.');
   let installed = false;
   try {
-    installed = tryInstallFnm();
+    installed = await tryInstallFnm();
   } catch (err) {
     console.warn(`fnm install attempt failed: ${err.message}`);
   }
@@ -60,11 +60,13 @@ function checkFnm(apps) {
   }
 }
 
-function checkRequiredCommands(apps) {
+async function checkRequiredCommands(apps) {
   const otherRequired = new Set();
   apps.forEach((app) => (app.requiredCommands || []).forEach((cmd) => otherRequired.add(cmd)));
 
-  const missingOther = [...otherRequired].filter((cmd) => !isCommandAvailable(cmd));
+  const required = [...otherRequired];
+  const availability = await Promise.all(required.map((cmd) => isCommandAvailable(cmd)));
+  const missingOther = required.filter((_cmd, i) => !availability[i]);
   if (missingOther.length) {
     console.warn(
       `\n⚠ Some sub-apps require CLI tools not found on PATH: ${missingOther.join(', ')}. Install them yourself before starting those apps.`
@@ -136,16 +138,17 @@ function checkAbsolutePaths(apps) {
     console.warn(
       `  "${app.name}" (${app.slug}): ${files.join(', ')} call fetch()/XHR with an absolute path (e.g. "/api/...").\n` +
         `    That resolves against the browser's origin root, not this app's mount path, and can 404 when proxied.\n` +
-        `    app-hub also mounts this app at /${app.slug} as a compatibility fallback for the common case of\n` +
-        `    assuming that's the mount path — but double-check any path that isn't under /${app.slug}/... or /apps/${app.slug}/...`
+        `    app-hub usually also mounts apps at /${app.slug} as a compatibility fallback for the common case of\n` +
+        `    assuming that's the mount path (skipped if it would collide with another app) — but double-check any\n` +
+        `    path that isn't under /${app.slug}/... or /apps/${app.slug}/...`
     );
   });
 }
 
-function main() {
+async function main() {
   const apps = loadApps().filter((app) => app.configured);
-  checkFnm(apps);
-  checkRequiredCommands(apps);
+  await checkFnm(apps);
+  await checkRequiredCommands(apps);
   checkAbsolutePaths(apps);
 }
 
