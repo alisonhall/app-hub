@@ -3,6 +3,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { loadApps } = require('../lib/apps');
 const { isCommandAvailable } = require('../lib/deps');
+const { findNvmDir, nvmHasVersion } = require('../lib/nvm');
 
 // fnm is the only dependency this script knows how to install itself,
 // since it's what app-hub's own .nvmrc support relies on (see README.md).
@@ -27,15 +28,56 @@ async function tryInstallFnm() {
 }
 
 async function checkFnm(apps) {
-  const needsFnm = apps.some((app) => app.nodeVersion);
-  if (!needsFnm) return;
+  const pinnedVersions = [...new Set(apps.filter((app) => app.nodeVersion).map((app) => app.nodeVersion))];
+  if (!pinnedVersions.length) return;
 
   if (await isCommandAvailable('fnm')) {
     console.log('fnm found on PATH — per-app Node version pinning (.nvmrc) is ready to use.');
     return;
   }
 
-  console.log('\nOne or more sub-apps pin a Node version via .nvmrc, which app-hub runs through fnm.');
+  // Without fnm, process-manager.js still isn't stuck — it falls back to
+  // nvm (if installed and it already has the pinned version), and after
+  // that to app-hub's own Node. So this is no longer a hard requirement,
+  // just the most reliable option. Whether it's worth skipping the
+  // auto-install below depends on nvm actually having every version
+  // that's needed on disk already — nvm being *installed* at all doesn't
+  // mean that (it could have zero Node versions in it), so that's checked
+  // explicitly rather than assumed.
+  const nvmDir = findNvmDir();
+  const nvmCoversEverything = nvmDir && pinnedVersions.every((version) => nvmHasVersion(nvmDir, version));
+
+  console.log('\nOne or more sub-apps pin a Node version via .nvmrc, which app-hub prefers to run through fnm.');
+
+  if (nvmCoversEverything) {
+    // Deliberately don't run tryInstallFnm() here: it shells out to a real
+    // system package manager (winget/brew), which can prompt for
+    // elevation and takes real time — every `npm install`/`npm start` —
+    // and nvm demonstrably already has everything that's needed, so it's
+    // not pulling its weight. Installing fnm is still worth doing by hand
+    // for the most reliable experience going forward, just not worth
+    // forcing automatically when nothing is actually missing right now.
+    console.log(
+      `fnm isn't on PATH, but nvm (${nvmDir}) already has every pinned version needed (${pinnedVersions.join(', ')}) ` +
+        "— app-hub will use those directly. Not installing fnm automatically since nothing's actually missing; " +
+        "install it yourself later for the most reliable experience going forward (it can fetch a version that's " +
+        'missing everywhere, nvm included, next time a .nvmrc changes).'
+    );
+    return;
+  }
+
+  if (nvmDir) {
+    // nvm exists but doesn't (yet) have everything needed — it can still
+    // try downloading the rest itself at spawn time, but that's subject to
+    // the same kind of failure that left fnm without it, so still worth
+    // attempting the more reliable fnm install below rather than skipping.
+    console.log(
+      `nvm was found (${nvmDir}) but doesn't yet have every pinned version needed (${pinnedVersions.join(', ')}) — ` +
+        "app-hub will still try nvm as a fallback (it can download what's missing), but that's not guaranteed, so " +
+        'still attempting to install fnm for the more reliable path.'
+    );
+  }
+
   let installed = false;
   try {
     installed = await tryInstallFnm();
@@ -48,7 +90,14 @@ async function checkFnm(apps) {
     console.warn(
       [
         '',
-        '⚠ fnm is required but could not be installed automatically on this platform.',
+        nvmDir
+          ? '⚠ fnm could not be installed automatically on this platform. Pinned versions not already in nvm ' +
+              "will depend on nvm downloading them itself (not guaranteed) or, failing that, fall back to " +
+              "app-hub's own Node (watch for the ⚠ badge on the home page). Install fnm for the most reliable " +
+              'experience:'
+          : '⚠ fnm could not be installed automatically on this platform, and no nvm install was found either. Pinned ' +
+              "apps will still start, but silently under app-hub's own Node instead of the version they pin (watch " +
+              'for the ⚠ badge on the home page). Install fnm (or nvm) to fix that:',
         '  Install it yourself, then re-run `npm install` to confirm:',
         '    macOS:   brew install fnm',
         '    Windows: winget install Schniz.fnm',
