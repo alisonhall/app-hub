@@ -36,17 +36,15 @@ async function main() {
 </body></html>`;
   }
 
-  apps.forEach((appConfig, i) => {
-    if (!appConfig.configured) return;
-
+  function mountApp(prefix, appConfig, i) {
     app.use(
-      appConfig.mountPath,
+      prefix,
       (req, res, next) => {
         // Sub-apps commonly use root-relative or "./" asset paths that only
         // resolve correctly once the browser's address bar has a trailing
         // slash after the mount path (e.g. /view-prs/, not /view-prs).
-        if (req.originalUrl === appConfig.mountPath) {
-          res.redirect(302, `${appConfig.mountPath}/`);
+        if (req.originalUrl === prefix) {
+          res.redirect(302, `${prefix}/`);
           return;
         }
         const state = ensureStarted(i);
@@ -63,10 +61,33 @@ async function main() {
       createProxyMiddleware({
         target: `http://localhost:${appConfig.port}`,
         changeOrigin: true,
-        pathRewrite: (p) => p.replace(new RegExp(`^${appConfig.mountPath}`), '') || '/',
+        pathRewrite: (p) => p.replace(new RegExp(`^${prefix}`), '') || '/',
         ws: true,
       })
     );
+  }
+
+  // Top-level prefixes app-hub itself reserves; a sub-app's slug alias (see
+  // below) never gets mounted over one of these, however unlikely a clash.
+  const RESERVED_PREFIXES = new Set(['/api']);
+  const usedPrefixes = new Set(apps.filter((a) => a.configured).map((a) => a.mountPath));
+
+  apps.forEach((appConfig, i) => {
+    if (!appConfig.configured) return;
+
+    mountApp(appConfig.mountPath, appConfig, i);
+
+    // Compatibility alias: some sub-apps' own client-side code hardcodes an
+    // assumption that they're mounted at "/<slug>" rather than app-hub's
+    // actual "/apps/<slug>" convention (e.g. a fetch('/<slug>/api/...') call
+    // computed from window.location.pathname). Since slugs are already
+    // enforced unique, this alias is unambiguous, and it transparently fixes
+    // that whole class of mistake without touching the sub-app.
+    const slugAlias = `/${appConfig.slug}`;
+    if (slugAlias !== appConfig.mountPath && !usedPrefixes.has(slugAlias) && !RESERVED_PREFIXES.has(slugAlias)) {
+      mountApp(slugAlias, appConfig, i);
+      usedPrefixes.add(slugAlias);
+    }
   });
 
   app.get('/api/apps', (req, res) => {

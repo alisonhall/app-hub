@@ -77,17 +77,21 @@ over HTTP rather than in-process function calls.
 4. `npm install` at the repo root — the `postinstall` script installs each
    sub-app's own dependencies too.
 
-`start` is run through a shell, so it can use shell syntax — but which
-shell matters. On Mac/Linux it's always a POSIX shell. On Windows, `spawn`'s
-default is `cmd.exe`, not a POSIX shell, so app-hub instead prefers `bash`,
-then `sh` (from Git for Windows or WSL) if either is on `PATH`, and only
-falls back to `cmd.exe` if neither is found. That means POSIX-style syntax
-like `MYVAR=$PORT node index.js` works the same on all three platforms as
-long as a POSIX shell is installed — but a `start` command written in
-`cmd.exe`-only syntax would only work on Windows without one. When in doubt,
-avoid shell syntax in `start` and read `process.env.PORT` (or other env
-vars) directly in your app's code instead — it works everywhere, no shell
-involved.
+`start` is run through the platform's native shell — `cmd.exe` on Windows,
+a POSIX shell elsewhere — deliberately, not a POSIX shell like `bash` on
+Windows too. That was tried and reverted: Git for Windows' `bash` re-execs
+itself into the target process (its emulation of POSIX `exec()`), which
+orphans the real process from the PID app-hub tracks, breaking `stopApp`'s
+ability to kill it — the app would keep running, holding its port, after
+being "stopped." Reliable start/stop matters more than shell-syntax
+convenience.
+
+Practically, this means POSIX syntax like `MYVAR=$PORT node index.js` in
+`start` works on Mac/Linux but **not** on Windows (it's `cmd.exe` there,
+which doesn't understand it). Avoid shell syntax in `start` entirely and
+read `process.env.PORT` (or other env vars) directly in your app's code
+instead — that works identically on every platform, no shell involved, and
+it's already how app-hub passes `PORT` in regardless.
 
 ### Pinning a sub-app's Node version
 
