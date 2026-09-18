@@ -1,41 +1,25 @@
 const path = require('path');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { loadApps, APP_CONFIG_FILENAME, RESERVED_MOUNT_PREFIXES } = require('./lib/apps');
+const { loadApps, APP_CONFIG_FILENAME, computeSlugAlias } = require('./lib/apps');
 const { assignPorts } = require('./lib/ports');
 const { startApp, stopApp, stopAll, STATUS } = require('./lib/process-manager');
+const { requireSameOrigin } = require('./lib/same-origin');
 
 const PORT = process.env.PORT || 3000;
-
-const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
 
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
-// Lightweight CSRF guard for the state-changing endpoints below: app-hub has
-// no auth (it's a local dev tool), so without this, any other page open in
-// the same browser could POST to these routes. Browsers always send Origin
-// on a cross-origin fetch/XHR; non-browser tools (curl, etc.) typically send
-// none at all, so only a *present-but-mismatched* Origin is rejected.
-function requireSameOrigin(req, res, next) {
-  const origin = req.headers.origin;
-  if (!origin) return next();
-  let originHost;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    return res.status(403).json({ error: 'invalid Origin header' });
-  }
-  if (originHost !== req.headers.host) {
-    return res.status(403).json({ error: 'cross-origin request rejected' });
-  }
-  next();
-}
+// Builds the Express app without binding a port or installing signal
+// handlers, so tests can exercise real routes/proxying on an ephemeral port
+// without also taking over this process's SIGINT/SIGTERM.
+async function buildApp() {
+  const app = express();
+  app.use(express.static(path.join(__dirname, 'public')));
 
-async function main() {
   const apps = await assignPorts(loadApps());
   const states = apps.map((appConfig) => ({
     app: appConfig,
@@ -109,8 +93,8 @@ async function main() {
     // computed from window.location.pathname). Since slugs are already
     // enforced unique, this alias is unambiguous, and it transparently fixes
     // that whole class of mistake without touching the sub-app.
-    const slugAlias = `/${appConfig.slug}`;
-    if (slugAlias !== appConfig.mountPath && !usedPrefixes.has(slugAlias) && !RESERVED_MOUNT_PREFIXES.has(slugAlias)) {
+    const slugAlias = computeSlugAlias(appConfig, usedPrefixes);
+    if (slugAlias) {
       mountApp(slugAlias, appConfig, i);
       usedPrefixes.add(slugAlias);
     }
@@ -150,6 +134,12 @@ async function main() {
     res.json({ status: states[i].status });
   });
 
+  return { app, states, apps };
+}
+
+async function main() {
+  const { app, states, apps } = await buildApp();
+
   app.listen(PORT, () => {
     console.log(`app-hub listening on http://localhost:${PORT}`);
     apps.forEach((a) => {
@@ -169,4 +159,8 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
-main();
+module.exports = { buildApp };
+
+if (require.main === module) {
+  main();
+}
