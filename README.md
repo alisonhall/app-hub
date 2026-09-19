@@ -67,7 +67,7 @@ over HTTP rather than in-process function calls.
    | `description`      | no       | shown on the home page; falls back to `package.json`'s `description`                       |
    | `icon`             | no       | emoji shown on the home page                                                               |
    | `port`             | no       | app-hub sets `PORT=<port>` in the child's env before spawning; if omitted, app-hub picks a free port for you at startup (check the home page or `/api/apps` to find it). Only declare one explicitly if you want a stable port for local debugging — and note two apps can't declare the same one, that fails fast at startup |
-   | `healthPath`       | no       | polled after spawn until it returns < 500 (defaults to `/`)                                |
+   | `healthPath`       | no       | polled after spawn until it returns < 500 — there's no timeout, so a slow build in `start` just keeps the app in `starting` (with a live elapsed-time count on the home page) for as long as it takes |
    | `mountPath`        | no       | defaults to `/apps/<slug>`. Same character restriction as `slug`, must be unique across apps, and can't be `/api` (reserved for app-hub's own routes) — all checked at startup, not discovered later as a crash |
    | `requiredCommands` | no       | CLI binaries the app shells out to (e.g. `gh`, `jq`); checked before spawn, surfaced as an `error` status if any are missing from `PATH` |
    | `actions`          | no       | extra buttons shown on the home page once the app is `running`. Each is `{ "label", "path", "method" }` — app-hub wires the button to `POST <mountPath><path>`; the app itself implements what that route does |

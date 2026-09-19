@@ -348,14 +348,63 @@ test('when fnm cannot install the pinned version and nvm is unavailable too, the
   assert.deepEqual(state.node, { requested: 'vnot-a-real-version-xyz', used: process.version, source: 'system' });
 });
 
-test('pollUntilHealthy gives up and sets an error after exhausting its attempts against a port nothing answers on', async () => {
+test('pollUntilHealthy keeps polling indefinitely against a port nothing answers on yet, instead of giving up on a timeout', async () => {
   const port = await getFreePort();
-  const state = { app: { port, healthPath: '/' }, status: STATUS.STARTING, error: null, child: null };
+  const state = {
+    app: { port, healthPath: '/' },
+    status: STATUS.STARTING,
+    error: null,
+    child: null,
+  };
 
-  await pollUntilHealthy(state, 2, 10);
+  // Fires the poll loop but doesn't await it — a build-heavy app's `start`
+  // can take minutes, and pollUntilHealthy now has no timeout of its own to
+  // wait out. A few missed checks against a dead port is enough to show it
+  // hasn't given up and errored.
+  pollUntilHealthy(state, 10);
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
-  assert.equal(state.status, STATUS.ERROR);
-  assert.match(state.error, /did not become healthy/);
+  assert.equal(state.status, STATUS.STARTING, 'should still be starting, not erroring out on a timeout');
+  assert.equal(state.error, null);
+
+  state.status = STATUS.STOPPED;
+});
+
+test('pollUntilHealthy stops polling once stopApp() marks the state STOPPED, instead of running forever', async () => {
+  const port = await getFreePort();
+  const state = {
+    app: { port, healthPath: '/' },
+    status: STATUS.STARTING,
+    error: null,
+    child: null,
+  };
+
+  const pollPromise = pollUntilHealthy(state, 10);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  state.status = STATUS.STOPPED;
+
+  await pollPromise;
+
+  assert.equal(state.status, STATUS.STOPPED);
+});
+
+test('stopApp kills an in-flight installChild (e.g. a still-running fnm/nvm install), not just the app itself', async () => {
+  // Mirrors how installNodeVersion/installViaNvm spawn their install
+  // process (shell: true, detached off Windows) — a long-running stand-in
+  // so there's something real for stopApp to actually have to kill, rather
+  // than something that would exit on its own during the test.
+  const { spawn } = require('node:child_process');
+  const installChild = spawn('node', ['-e', 'setTimeout(() => {}, 60000)'], {
+    detached: process.platform !== 'win32',
+  });
+  await new Promise((resolve) => installChild.once('spawn', resolve));
+
+  const state = { app: {}, status: STATUS.STARTING, error: null, child: null, installChild };
+
+  await stopApp(state);
+
+  assert.equal(state.status, STATUS.STOPPED);
+  assert.notEqual(installChild.exitCode, null, 'the install child should actually have been killed, not left running');
 });
 
 test('a concurrent second stopApp() call shares the in-flight promise instead of sending a redundant kill', async () => {

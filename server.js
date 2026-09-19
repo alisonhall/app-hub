@@ -116,6 +116,7 @@ async function buildApp() {
         status: s.status,
         error: s.error,
         node: s.node,
+        startedAt: s.startedAt || null,
       }))
     );
   });

@@ -68,8 +68,13 @@
 
           const isRunning = a.status === 'running' || a.status === 'starting';
           const action = isRunning ? 'stop' : 'start';
-          const label = a.status === 'starting' ? 'Starting…' : isRunning ? 'Stop' : 'Start';
-          const disabled = a.status === 'starting' ? 'disabled' : '';
+          const startingFor = a.status === 'starting' && a.startedAt ? Math.max(0, Math.round((Date.now() - a.startedAt) / 1000)) : null;
+          // Stop stays clickable while starting — with no timeout, a stuck
+          // or misconfigured app (wrong healthPath, hung build) would
+          // otherwise be unkillable from the UI. The elapsed count on the
+          // status badge already communicates "still starting"; the button
+          // itself just needs to say what clicking it does.
+          const label = isRunning ? 'Stop' : 'Start';
 
           const actionsHtml =
             a.status === 'running' && a.actions && a.actions.length
@@ -88,10 +93,10 @@
             <div class="name">${gitBadge(a)} <a href="${escapeHtml(a.mountPath)}">${escapeHtml(a.name)}</a></div>
             <div class="desc">${escapeHtml(a.description || '')}</div>
           </span>
-          <span class="status status-${a.status}">${a.status}${a.error ? ': ' + escapeHtml(a.error) : ''}</span>
+          <span class="status status-${a.status}">${a.status}${startingFor !== null ? ` (${startingFor}s)` : ''}${a.error ? ': ' + escapeHtml(a.error) : ''}</span>
           <span class="port" title="Child process port">:${escapeHtml(a.port)}</span>
           ${nodeBadge(a)}
-          <button class="toggle" data-slug="${escapeHtml(a.slug)}" data-action="${action}" ${disabled}>${label}</button>
+          <button class="toggle" data-slug="${escapeHtml(a.slug)}" data-action="${action}">${label}</button>
           ${actionsHtml}
         </li>`;
         })
