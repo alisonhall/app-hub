@@ -15,6 +15,9 @@
   .name a { color: inherit; text-decoration: none; }
   .name a:hover { text-decoration: underline; }
   .desc { font-size: 0.85rem; opacity: 0.7; }
+  .port { font-size: 0.75rem; opacity: 0.6; font-family: monospace; }
+  .node-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 1rem; font-family: monospace; background: #8883; opacity: 0.75; }
+  .node-badge.node-fallback { background: #9a6b0022; color: #9a6b00; opacity: 1; }
   .status { font-size: 0.75rem; padding: 0.2rem 0.55rem; border-radius: 1rem; text-transform: uppercase; letter-spacing: 0.03em; }
   .status-running { background: #1a7f3722; color: #1a7f37; }
   .status-starting { background: #9a6b0022; color: #9a6b00; }
@@ -35,102 +38,7 @@
   <h1>app-hub</h1>
   <ul id="apps"><li class="empty">Loading…</li></ul>
 
-  <script>
-    async function refresh() {
-      const res = await fetch('/api/apps');
-      const apps = await res.json();
-      const list = document.getElementById('apps');
-
-      if (!apps.length) {
-        list.innerHTML = '<li class="empty">No apps found. Add one under apps/&lt;folder&gt;/app-hub.config.json.</li>';
-        return;
-      }
-
-      function gitBadge(a) {
-        return a.hasOwnGit
-          ? '<span class="git-badge" title="Has its own git repository">🔀</span>'
-          : '<span class="git-badge" title="Local code, not its own git repository">📁</span>';
-      }
-
-      list.innerHTML = apps
-        .map((a) => {
-          if (!a.configured) {
-            return `
-        <li>
-          <span class="icon">${a.icon}</span>
-          <span class="meta">
-            <div class="name">${gitBadge(a)} <span class="unconfigured">${a.name}</span></div>
-            <div class="desc">${a.description || ''}</div>
-          </span>
-          <span class="status status-not-configured">not set up</span>
-        </li>`;
-          }
-
-          const isRunning = a.status === 'running' || a.status === 'starting';
-          const action = isRunning ? 'stop' : 'start';
-          const label = a.status === 'starting' ? 'Starting…' : isRunning ? 'Stop' : 'Start';
-          const disabled = a.status === 'starting' ? 'disabled' : '';
-
-          const actionsHtml =
-            a.status === 'running' && a.actions && a.actions.length
-              ? `<div class="actions-row">${a.actions
-                  .map(
-                    (act) =>
-                      `<button class="action-btn" data-mount-path="${a.mountPath}" data-path="${act.path}" data-method="${act.method || 'POST'}">${act.label}</button>`
-                  )
-                  .join('')}<span class="action-result"></span></div>`
-              : '';
-
-          return `
-        <li>
-          <span class="icon">${a.icon}</span>
-          <span class="meta">
-            <div class="name">${gitBadge(a)} <a href="${a.mountPath}">${a.name}</a></div>
-            <div class="desc">${a.description || ''}</div>
-          </span>
-          <span class="status status-${a.status}">${a.status}${a.error ? ': ' + a.error : ''}</span>
-          <button class="toggle" data-slug="${a.slug}" data-action="${action}" ${disabled}>${label}</button>
-          ${actionsHtml}
-        </li>`;
-        })
-        .join('');
-    }
-
-    document.getElementById('apps').addEventListener('click', async (e) => {
-      const toggleBtn = e.target.closest('button.toggle');
-      if (toggleBtn) {
-        toggleBtn.disabled = true;
-        await fetch(`/api/apps/${toggleBtn.dataset.slug}/${toggleBtn.dataset.action}`, { method: 'POST' });
-        refresh();
-        return;
-      }
-
-      const actionBtn = e.target.closest('button.action-btn');
-      if (actionBtn) {
-        const { mountPath, path: actionPath, method } = actionBtn.dataset;
-        const resultEl = actionBtn.parentElement.querySelector('.action-result');
-        actionBtn.disabled = true;
-        if (resultEl) resultEl.textContent = 'Running…';
-        try {
-          const res = await fetch(`${mountPath}${actionPath}`, { method });
-          let text;
-          try {
-            const data = await res.json();
-            text = data.message || (data.ok === false ? 'Failed.' : 'Done.');
-          } catch {
-            text = res.ok ? 'Done.' : `Failed (${res.status}).`;
-          }
-          if (resultEl) resultEl.textContent = text;
-        } catch (err) {
-          if (resultEl) resultEl.textContent = `Error: ${err.message}`;
-        } finally {
-          actionBtn.disabled = false;
-        }
-      }
-    });
-
-    refresh();
-    setInterval(refresh, 2000);
-  </script>
+  <script src="client-helpers.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
