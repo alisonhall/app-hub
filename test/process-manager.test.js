@@ -162,7 +162,7 @@ test('an app that exits unexpectedly on its own (not via stopApp) records the ex
   }
 });
 
-test('an app pinning a Node version via .nvmrc runs its start command through fnm exec', async (t) => {
+test('an app pinning a Node version via .nvmrc runs its start command under fnm\'s resolved version', async (t) => {
   if (!(await isCommandAvailable('fnm'))) {
     t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');
     return;
@@ -196,6 +196,95 @@ test('an app pinning a Node version via .nvmrc runs its start command through fn
     // currentVersion was deliberately passed without a leading "v" above —
     // state.node should still normalize it to match process.version exactly.
     assert.deepEqual(state.node, { requested: process.version, used: process.version, source: 'fnm' });
+  } finally {
+    if (state.child && state.child.exitCode === null) await stopApp(state);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a Node-version-pinned app whose start command invokes npm (not node directly) still starts', async (t) => {
+  if (!(await isCommandAvailable('fnm'))) {
+    t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');
+    return;
+  }
+  // Regression test: fnm exec spawns its target command directly rather
+  // than through a shell, so on Windows it can't resolve "npm" (an
+  // npm.cmd shim, not a real .exe) at all — "npm start" would fail with
+  // "Can't spawn program: program not found" even though the exact same
+  // command works fine outside a pinned-version app. process-manager.js
+  // no longer uses `fnm exec` for this reason (see lib/fnm.js); this test
+  // exercises exactly the code path ("npm start" under a pin) that broke.
+  const currentVersion = process.version.replace(/^v/, '');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-hub-test-'));
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ name: 'npm-start-pinned-test', scripts: { start: 'node index.js' } })
+  );
+  fs.writeFileSync(
+    path.join(dir, 'index.js'),
+    "require('http').createServer((req,res)=>res.end('ok')).listen(process.env.PORT);"
+  );
+  const port = await getFreePort();
+
+  const state = startApp({
+    slug: 'npm-start-pinned-test',
+    dir,
+    start: 'npm start',
+    port,
+    healthPath: '/',
+    requiredCommands: [],
+    nodeVersion: currentVersion,
+  });
+
+  try {
+    const deadline = Date.now() + 30000;
+    while (state.status === STATUS.STARTING && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.equal(state.status, STATUS.RUNNING, `expected running, got ${state.status} (${state.error})`);
+    assert.equal(state.node.source, 'fnm');
+  } finally {
+    if (state.child && state.child.exitCode === null) await stopApp(state);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a loose .nvmrc version specifier (e.g. "20") resolves to fnm\'s actual installed version, not a literal-string mismatch', async (t) => {
+  if (!(await isCommandAvailable('fnm'))) {
+    t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');
+    return;
+  }
+  // `fnm install 20` installs under a fully-qualified folder name (e.g.
+  // v20.20.2), never one literally named "v20" or "20" — process-manager.js
+  // asks fnm what it actually resolved to (lib/fnm.js's resolveFnmVersion)
+  // rather than assuming the requested string matches a real install, so
+  // this should still succeed via fnm, just with `used` != `requested`.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-hub-test-'));
+  fs.writeFileSync(
+    path.join(dir, 'index.js'),
+    "require('http').createServer((req,res)=>res.end('ok')).listen(process.env.PORT);"
+  );
+  const port = await getFreePort();
+
+  const state = startApp({
+    slug: 'loose-nvmrc-test',
+    dir,
+    start: 'node index.js',
+    port,
+    healthPath: '/',
+    requiredCommands: [],
+    nodeVersion: '20',
+  });
+
+  try {
+    const deadline = Date.now() + 60000;
+    while (state.status === STATUS.STARTING && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.equal(state.status, STATUS.RUNNING, `expected running, got ${state.status} (${state.error})`);
+    assert.equal(state.node.source, 'fnm');
+    assert.equal(state.node.requested, 'v20');
+    assert.match(state.node.used, /^v20\.\d+\.\d+$/, `expected a fully-qualified v20.x.x, got ${state.node.used}`);
   } finally {
     if (state.child && state.child.exitCode === null) await stopApp(state);
     fs.rmSync(dir, { recursive: true, force: true });
