@@ -404,7 +404,15 @@ test('stopApp kills an in-flight installChild (e.g. a still-running fnm/nvm inst
   await stopApp(state);
 
   assert.equal(state.status, STATUS.STOPPED);
-  assert.notEqual(installChild.exitCode, null, 'the install child should actually have been killed, not left running');
+  // Killed via SIGTERM on POSIX, a process that dies from a signal (rather
+  // than exiting normally) gets exitCode === null with signalCode holding
+  // the signal name instead — only Windows' taskkill gives it a real exit
+  // code. Checking exitCode alone would wrongly fail here on Mac/Linux even
+  // though the kill worked, so accept either as proof it's actually dead.
+  assert.ok(
+    installChild.exitCode !== null || installChild.signalCode !== null,
+    'the install child should actually have been killed, not left running'
+  );
 });
 
 test('a concurrent second stopApp() call shares the in-flight promise instead of sending a redundant kill', async () => {
