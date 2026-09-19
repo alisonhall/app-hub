@@ -54,6 +54,27 @@ function isPortFree(port) {
   });
 }
 
+// A process's 'exit' event firing doesn't guarantee the OS has finished
+// releasing everything it held (e.g. the listening socket) by that exact
+// instant — there can be a brief kernel-side gap between "the process is
+// gone" and "the port is actually rebindable again", and how long that gap
+// is depends on host scheduling, which varies a lot more on shared CI
+// runners than on a local machine. A single point-in-time isPortFree()
+// check right after stopApp() resolves is exactly the kind of assertion
+// that's fine 99% of the time locally and flaky under CI load — so poll
+// for a bit instead of asserting on one snapshot.
+async function waitForPortFree(port, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let free = await isPortFree(port);
+  while (!free && Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 50));
+    // eslint-disable-next-line no-await-in-loop
+    free = await isPortFree(port);
+  }
+  return free;
+}
+
 test('startApp/stopApp full cycle: spawns, becomes healthy, then stops cleanly with no lingering error', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-hub-test-'));
   fs.writeFileSync(
@@ -86,7 +107,7 @@ test('startApp/stopApp full cycle: spawns, becomes healthy, then stops cleanly w
     await stopApp(state);
     assert.equal(state.status, STATUS.STOPPED);
     assert.equal(state.error, null);
-    assert.equal(await isPortFree(port), true, 'port should be free again after stopApp');
+    assert.equal(await waitForPortFree(port), true, 'port should be free again after stopApp');
   } finally {
     // exitCode is the reliable signal here: `killed` only ever gets set by
     // Node when child.kill() itself was called, which isn't every path
@@ -511,7 +532,7 @@ test('a concurrent second stopApp() call shares the in-flight promise instead of
     await Promise.all([first, second]);
     assert.equal(state.status, STATUS.STOPPED);
     assert.equal(state.error, null);
-    assert.equal(await isPortFree(port), true, 'port should be free again after stopApp');
+    assert.equal(await waitForPortFree(port), true, 'port should be free again after stopApp');
   } finally {
     if (state.child && state.child.exitCode === null) await stopApp(state);
     fs.rmSync(dir, { recursive: true, force: true });
