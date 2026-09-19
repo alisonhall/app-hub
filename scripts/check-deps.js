@@ -194,11 +194,45 @@ function checkAbsolutePaths(apps) {
   });
 }
 
+// --- Advisory scan for another known class of cross-platform bug ---
+//
+// `start` is run through the platform's native shell — cmd.exe on Windows,
+// not bash/sh (see README's note on `start` command portability) — so
+// POSIX-only shell syntax in it silently breaks there: cmd.exe doesn't
+// understand inline env-var assignment (`FOO=bar cmd`) or $VAR/${VAR}
+// expansion, and tries to run the literal text as a program name instead.
+// This is exactly what happened to view-prs-dashboard's
+// `VIEW_PRS_PORT=$PORT node ...`. Advisory-only, same caveats as
+// checkAbsolutePaths above — this can't tell a real problem from a command
+// that happens to contain a literal "=" or "$" for some other reason.
+const POSIX_ENV_PREFIX_PATTERN = /^\s*[A-Za-z_][A-Za-z0-9_]*=\S/;
+const POSIX_VAR_EXPANSION_PATTERN = /\$\{?[A-Za-z_]/;
+
+function checkStartCommandPortability(apps) {
+  const flagged = apps.filter(
+    (app) => app.start && (POSIX_ENV_PREFIX_PATTERN.test(app.start) || POSIX_VAR_EXPANSION_PATTERN.test(app.start))
+  );
+  if (!flagged.length) return;
+
+  console.warn('\n⚠ Possible cross-platform issues in `start` (advisory, not blocking — verify before assuming a bug):');
+  flagged.forEach((app) => {
+    console.warn(
+      `  "${app.name}" (${app.slug}): start: "${app.start}"\n` +
+        '    This looks like POSIX shell syntax (inline env-var assignment or $VAR expansion), which only\n' +
+        '    works under bash/sh — on Windows, app-hub runs `start` through cmd.exe, which will fail with\n' +
+        '    something like "program not found" instead. Read the variable directly in the app\'s own code\n' +
+        '    (app-hub already sets PORT in the environment before spawning) instead of setting it via shell\n' +
+        '    syntax in `start` — see the README\'s note on `start` command portability.'
+    );
+  });
+}
+
 async function main() {
   const apps = loadApps().filter((app) => app.configured);
   await checkFnm(apps);
   await checkRequiredCommands(apps);
   checkAbsolutePaths(apps);
+  checkStartCommandPortability(apps);
 }
 
 main();

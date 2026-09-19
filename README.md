@@ -93,6 +93,14 @@ read `process.env.PORT` (or other env vars) directly in your app's code
 instead — that works identically on every platform, no shell involved, and
 it's already how app-hub passes `PORT` in regardless.
 
+`npm run check-deps` (also run automatically on `postinstall`/`prestart`,
+see [Dependency checks](#dependency-checks)) scans every configured app's
+`start` for exactly this — inline env-var assignment (`FOO=bar cmd`) or
+`$VAR`/`${VAR}` expansion — and warns if it finds any, before you hit a
+confusing "program not found" error on another platform. It's advisory
+only, alongside a similar scan for the [mount-path
+issue](#compatibility-alias) client-side code can hit.
+
 ### Pinning a sub-app's Node version
 
 Drop a `.nvmrc` (or `.node-version`) in the sub-app's folder (e.g.
