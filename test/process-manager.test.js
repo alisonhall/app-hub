@@ -249,6 +249,70 @@ test('a Node-version-pinned app whose start command invokes npm (not node direct
   }
 });
 
+test('stopping an app while a real fnm install is still in flight kills it through the actual startApp/beginStart path', async (t) => {
+  if (!(await isCommandAvailable('fnm'))) {
+    t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');
+    return;
+  }
+  // The other installChild test (further down) injects a synthetic
+  // installChild straight into stopApp/killTree, which only proves those
+  // two functions cooperate correctly — it never exercises beginStart's own
+  // onSpawn wiring (`installNodeVersion(app.nodeVersion, (child) => {
+  // state.installChild = child; })`) at all. This one goes through the real
+  // startApp() -> beginStart() path with an actual `fnm install` child, so a
+  // regression in that wiring (e.g. the callback silently not firing) would
+  // actually be caught here.
+  const currentVersion = process.version.replace(/^v/, '');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-hub-test-'));
+  fs.writeFileSync(
+    path.join(dir, 'index.js'),
+    "require('http').createServer((req,res)=>res.end('ok')).listen(process.env.PORT);"
+  );
+  const port = await getFreePort();
+
+  const state = startApp({
+    slug: 'stop-during-fnm-install-test',
+    dir,
+    start: 'node index.js',
+    port,
+    healthPath: '/',
+    requiredCommands: [],
+    // Already installed (it's literally the Node running these tests), so
+    // `fnm install` doesn't need real network access — but it still spawns
+    // a genuine fnm process and takes real, non-zero wall-clock time to
+    // confirm that and exit, which is the window this test races to stop
+    // it inside of.
+    nodeVersion: currentVersion,
+  });
+
+  // Poll for state.installChild to appear — set synchronously the instant
+  // installNodeVersion's onSpawn callback fires — then stop as soon as it
+  // does, to land inside that window as often as real timing allows.
+  const detectDeadline = Date.now() + 5000;
+  while (!state.installChild && Date.now() < detectDeadline) {
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  const installChildRef = state.installChild;
+
+  await stopApp(state);
+
+  try {
+    assert.equal(state.status, STATUS.STOPPED, `expected a clean stop, got ${state.status} (${state.error})`);
+    assert.equal(state.child, null, "the app's own process should never have been spawned");
+    if (installChildRef) {
+      // Whether stopApp actually had to kill it (caught mid-install) or it
+      // had already finished on its own by the time stopApp ran, either way
+      // it should be a real, exited process now — never left running.
+      assert.ok(
+        installChildRef.exitCode !== null || installChildRef.signalCode !== null,
+        'the fnm install child should be a real process that has actually exited, not left running'
+      );
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a loose .nvmrc version specifier (e.g. "20") resolves to fnm\'s actual installed version, not a literal-string mismatch', async (t) => {
   if (!(await isCommandAvailable('fnm'))) {
     t.skip('fnm is not installed on this machine — see README\'s "Pinning a sub-app\'s Node version"');

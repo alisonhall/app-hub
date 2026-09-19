@@ -62,6 +62,19 @@ test(
 );
 
 test(
+  'malformed JSON error preserves the original SyntaxError as .cause, for anyone debugging via a stack trace',
+  withTempApps(['test-bad-json-cause'], (dir) => {
+    fs.writeFileSync(path.join(dir, 'app-hub.config.json'), '{ not valid json');
+    try {
+      loadApps();
+      assert.fail('expected loadApps() to throw');
+    } catch (err) {
+      assert.ok(err.cause instanceof SyntaxError, `expected err.cause to be the original SyntaxError, got ${err.cause}`);
+    }
+  })
+);
+
+test(
   '.nvmrc is preferred over .node-version when both are present',
   withTempApps(['test-nvmrc-precedence'], (dir) => {
     fs.writeFileSync(path.join(dir, 'app-hub.config.json'), JSON.stringify({ name: 'x', slug: 'test-nvmrc-precedence', start: 'node index.js' }));

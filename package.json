@@ -9,7 +9,8 @@
     "start": "node server.js",
     "postinstall": "node scripts/install-apps.js && node scripts/check-deps.js",
     "check-deps": "node scripts/check-deps.js",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "license": "MIT",
   "engines": {
@@ -18,5 +19,9 @@
   "dependencies": {
     "express": "^4.21.2",
     "http-proxy-middleware": "^3.0.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0"
   }
 }

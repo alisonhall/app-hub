@@ -99,6 +99,49 @@ test(
 );
 
 test(
+  'GET /api/apps exposes startedAt once an app has been asked to start, for the client\'s live elapsed-time count',
+  withTempApp('test-server-startedat', async (dir) => {
+    fs.writeFileSync(
+      path.join(dir, 'app-hub.config.json'),
+      JSON.stringify({ name: 'startedAt test', slug: 'test-server-startedat', start: 'node index.js', healthPath: '/' })
+    );
+    fs.writeFileSync(
+      path.join(dir, 'index.js'),
+      "require('http').createServer((req,res)=>res.end('ok')).listen(process.env.PORT);"
+    );
+    const { app, states } = await buildApp();
+    const { server, base } = await listen(app);
+    const slug = 'test-server-startedat';
+
+    try {
+      const beforeRes = await fetch(`${base}/api/apps`);
+      const beforeEntry = (await beforeRes.json()).find((a) => a.slug === slug);
+      assert.equal(beforeEntry.startedAt, null, 'not started yet, so no startedAt');
+
+      const before = Date.now();
+      const startRes = await fetch(`${base}/api/apps/${slug}/start`, { method: 'POST' });
+      assert.equal(startRes.status, 200);
+      const after = Date.now();
+
+      const afterRes = await fetch(`${base}/api/apps`);
+      const afterEntry = (await afterRes.json()).find((a) => a.slug === slug);
+      assert.equal(typeof afterEntry.startedAt, 'number');
+      assert.ok(
+        afterEntry.startedAt >= before && afterEntry.startedAt <= after,
+        `expected startedAt (${afterEntry.startedAt}) between ${before} and ${after}`
+      );
+    } finally {
+      const state = states.find((s) => s.app.slug === slug);
+      if (state && state.child && state.child.exitCode === null) {
+        const { stopApp } = require('../lib/process-manager');
+        await stopApp(state);
+      }
+      server.close();
+    }
+  })
+);
+
+test(
   'starting a real app through the HTTP API makes it reachable through both the proxy mount and the slug alias',
   withTempApp('test-server-e2e', async (dir) => {
     fs.writeFileSync(
