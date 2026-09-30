@@ -5,12 +5,23 @@
   "description": "Root launcher that discovers, starts, and proxies to sub-apps declared with an app-hub.config.json",
   "main": "server.js",
   "scripts": {
+    "prestart": "node scripts/check-deps.js",
     "start": "node server.js",
-    "postinstall": "node scripts/install-apps.js"
+    "postinstall": "node scripts/install-apps.js && node scripts/check-deps.js",
+    "check-deps": "node scripts/check-deps.js",
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "express": "^4.21.2",
     "http-proxy-middleware": "^3.0.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0"
   }
 }

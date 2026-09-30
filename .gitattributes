@@ -1,0 +1,8 @@
+# Let Git normalize line endings for text files, checked out using each
+# platform's native line ending, so cross-platform contributors don't get
+# spurious CRLF/LF diff noise.
+* text=auto
+
+# Shell scripts need LF even on Windows checkouts, or a shell (bash, sh)
+# will fail to run them.
+*.sh text eol=lf
