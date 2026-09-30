@@ -70,12 +70,33 @@ async function buildApp() {
         next();
       },
       createProxyMiddleware({
+        // Placeholder — actual routing goes through `router` below, since
+        // which loopback address the app answered health checks on
+        // (127.0.0.1 vs ::1) isn't known until it's RUNNING. Still required
+        // here anyway: http-proxy-middleware's own error/logger plugin
+        // falls back to `new URL(options.target)` in some cases even when
+        // `router` is set, and crashes the whole process if `target` is
+        // missing entirely.
         target: `http://127.0.0.1:${appConfig.port}`,
+        // Some dev servers (e.g. Gatsby's, which binds `localhost` and
+        // resolves to the IPv6 loopback on many systems/Node versions) only
+        // listen on ::1, not 127.0.0.1 — see checkHealth in
+        // lib/process-manager.js, which records whichever one actually
+        // answered.
+        router: () => {
+          const host = states[i].host || '127.0.0.1';
+          // IPv6 literals need bracket notation in a URL authority.
+          return `http://${host.includes(':') ? `[${host}]` : host}:${appConfig.port}`;
+        },
         changeOrigin: true,
         // A literal prefix strip, not a regex: a folder/slug name containing
         // regex-special characters (e.g. "my-app (backup)") would otherwise
         // throw "Invalid regular expression" on the app's first request.
-        pathRewrite: (p) => (p.startsWith(prefix) ? p.slice(prefix.length) : p) || '/',
+        // For a preserveMountPath app, forward the untouched original URL —
+        // req.originalUrl rather than the `p` argument, since Express may
+        // have already stripped the prefix from `p` by the time this runs.
+        pathRewrite: (p, req) =>
+          appConfig.preserveMountPath ? req.originalUrl : (p.startsWith(prefix) ? p.slice(prefix.length) : p) || '/',
         ws: true,
       })
     );
